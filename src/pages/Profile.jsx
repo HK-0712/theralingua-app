@@ -1,108 +1,145 @@
-// src/pages/Profile.js
+// src/pages/Profile.jsx
 
-import React, { useState } from 'react';
+// 1. 移除 LanguageSelector 的 import
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatInTimeZone } from 'date-fns-tz';
 import '../styles/Profile.css';
 import Loader from '../components/Loader';
 import Message from '../components/Message';
 
-// 1. 接收從 App.js 傳來的 props: practiceLanguage 和 setPracticeLanguage
+// 2. 不再需要 i18n 實例，因為語言切換由 AppLayout 處理
 export default function Profile({ practiceLanguage, setPracticeLanguage }) {
-  // useTranslation 只用來翻譯 UI 文字，不再用於語言切換
   const { t } = useTranslation(); 
-  
-  const [initialUserName] = useState("Alex Doe");
-  // 2. 記錄頁面載入時的初始練習語言
-  const [initialPracticeLanguage] = useState(practiceLanguage); 
 
+  // ... (所有其他的 state 和函式邏輯保持完全不變)
+  const [profileData, setProfileData] = useState(null);
   const [formData, setFormData] = useState({
-    userName: initialUserName,
-    password: "",
-    confirmPassword: "",
-    // 3. 將下拉選單的值與 props 同步
-    defaultLanguage: practiceLanguage,
+    userName: '',
+    password: '',
+    confirmPassword: '',
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState({ text: '', type: '' });
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState({ text: "", type: "" });
+  useEffect(() => {
+    const fetchProfile = async () => {
+      setIsLoading(true);
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        setMessage({ text: 'Authentication error. Please log in again.', type: 'error' });
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/profile/', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        } );
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch profile data.' }));
+          throw new Error(errorData.detail || JSON.stringify(errorData));
+        }
+        const data = await response.json();
+        setProfileData(data);
+        const initialUsername = data.username === data.email ? '' : data.username;
+        setFormData({ userName: initialUsername, password: '', confirmPassword: '' });
+      } catch (error) {
+        setMessage({ text: error.message, type: 'error' });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prevData => ({ ...prevData, [name]: value }));
   };
 
-  const handleUpdate = (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
-    setMessage({ text: "", type: "" });
-
-    if (formData.password !== formData.confirmPassword) {
-      setMessage({ text: "New passwords do not match. Please try again.", type: "error" });
+    setMessage({ text: '', type: '' });
+    if (formData.password && formData.password !== formData.confirmPassword) {
+      setMessage({ text: 'New passwords do not match.', type: 'error' });
       return;
     }
-
-    const isNameChanged = formData.userName !== initialUserName;
+    const isNameChanged = formData.userName !== (profileData.username === profileData.email ? '' : profileData.username);
     const isPasswordChanged = formData.password.length > 0;
-    // 4. 檢查練習語言是否真的改變了
-    const isLanguageChanged = formData.defaultLanguage !== initialPracticeLanguage;
-
+    const isLanguageChanged = practiceLanguage !== (localStorage.getItem('practiceLanguage') || 'en');
     if (!isNameChanged && !isPasswordChanged && !isLanguageChanged) {
-      setMessage({ text: "No changes detected. Please modify your user name, password, or default language to update.", type: "info" });
+      setMessage({ text: 'No changes detected.', type: 'info' });
       return;
     }
-
     setIsLoading(true);
-    setTimeout(() => {
-      // 5. 如果語言改變了，就呼叫從 App.js 傳來的函式來更新全域狀態
-      if (isLanguageChanged) {
-        setPracticeLanguage(formData.defaultLanguage);
+    const token = localStorage.getItem('accessToken');
+    try {
+      const requestBody = {};
+      if (isNameChanged && formData.userName) requestBody.username = formData.userName;
+      if (isPasswordChanged) {
+        requestBody.password = formData.password;
+        requestBody.confirm_password = formData.confirmPassword;
       }
-      
-      setMessage({ text: "Profile updated successfully!", type: "success" });
-      setFormData(prevData => ({ ...prevData, password: "", confirmPassword: "" }));
+      if (isLanguageChanged) requestBody.practice_language = practiceLanguage;
+      const response = await fetch('http://127.0.0.1:8000/api/profile/', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody ),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        const friendlyError = errorData.password?.[0] || JSON.stringify(errorData);
+        throw new Error(friendlyError);
+      }
+      const updatedProfile = await response.json();
+      setProfileData(updatedProfile);
+      setFormData({
+        userName: updatedProfile.username === updatedProfile.email ? '' : updatedProfile.username,
+        password: '',
+        confirmPassword: '',
+      });
+      if (isLanguageChanged) {
+        localStorage.setItem('practiceLanguage', practiceLanguage);
+      }
+      setMessage({ text: 'Profile updated successfully!', type: 'success' });
+    } catch (error) {
+      setMessage({ text: `Update failed: ${error.message}`, type: 'error' });
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
+
+  const formatHongKongTime = (utcDateString) => {
+    if (!utcDateString) return 'N/A';
+    return formatInTimeZone(utcDateString, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss');
+  };
+
+  if (isLoading && !profileData) {
+    return <main className="profile-page-container"><h1 className="page-title">{t('profilePage.title')}</h1><Loader /></main>;
+  }
+  if (!profileData) {
+    return <main className="profile-page-container"><h1 className="page-title">{t('profilePage.title')}</h1><Message text={message.text || "Could not load profile data."} type="error" /></main>;
+  }
 
   return (
     <main className="profile-page-container">
+      {/* 3. 移除這裡的 LanguageSelector */}
       <h1 className="page-title">{t('profilePage.title')}</h1>
-      <Message text={message.text} type={message.type} />
+      {message.text && <Message text={message.text} type={message.type} />}
       <form id="profile-form" className="profile-form" onSubmit={handleUpdate}>
-        {/* ... 其他 input groups ... */}
-        <div className="input-group">
-          <label htmlFor="user-id">{t('profilePage.userId')}</label>
-          <input type="text" id="user-id" name="userId" defaultValue="user-abc-12345" disabled />
-        </div>
-        <div className="input-group">
-          <label htmlFor="created-time">{t('profilePage.accountCreated')}</label>
-          <input type="text" id="created-time" name="createdTime" defaultValue="2024-08-15 10:30:45 UTC" disabled />
-        </div>
-        <div className="input-group">
-          <label htmlFor="email">{t('profilePage.emailAddress')}</label>
-          <input type="email" id="email" name="email" defaultValue="current.user@example.com" disabled />
-        </div>
-        <div className="input-group">
-          <label htmlFor="user-name">{t('profilePage.userName')}</label>
-          <input type="text" id="user-name" name="userName" value={formData.userName} onChange={handleInputChange} required />
-        </div>
-        <div className="input-group">
-          <label htmlFor="password">{t('profilePage.newPassword')}</label>
-          <input type="password" id="password" name="password" placeholder="••••••••" value={formData.password} onChange={handleInputChange} />
-        </div>
-        <div className="input-group">
-          <label htmlFor="confirm-password">{t('profilePage.confirmPassword')}</label>
-          <input type="password" id="confirm-password" name="confirmPassword" placeholder="••••••••" value={formData.confirmPassword} onChange={handleInputChange} />
-        </div>
+        {/* ... (所有表單欄位保持完全不變) ... */}
+        <div className="input-group"><label htmlFor="user-id">{t('profilePage.userId')}</label><input type="text" id="user-id" value={profileData.user_id} disabled /></div>
+        <div className="input-group"><label htmlFor="created-time">{t('profilePage.accountCreated')}</label><input type="text" id="created-time" value={formatHongKongTime(profileData.date_joined)} disabled /></div>
+        <div className="input-group"><label htmlFor="email">{t('profilePage.emailAddress')}</label><input type="email" id="email" value={profileData.email} disabled /></div>
+        <div className="input-group"><label htmlFor="user-name">{t('profilePage.userName')}</label><input type="text" id="user-name" name="userName" value={formData.userName} onChange={handleInputChange} placeholder="Please set your username" /></div>
+        <div className="input-group"><label htmlFor="password">{t('profilePage.newPassword')}</label><input type="password" id="password" name="password" placeholder="Leave blank to keep current" value={formData.password} onChange={handleInputChange} /></div>
+        <div className="input-group"><label htmlFor="confirm-password">{t('profilePage.confirmPassword')}</label><input type="password" id="confirm-password" name="confirmPassword" placeholder="Confirm new password" value={formData.confirmPassword} onChange={handleInputChange} /></div>
         <div className="input-group">
           <label htmlFor="default-language">{t('profilePage.defaultLanguage', 'Default Language')}</label>
-          <select
-            id="default-language"
-            name="defaultLanguage"
-            className="input-group-select"
-            // 6. 確保下拉選單的值由 state 控制
-            value={formData.defaultLanguage}
-            onChange={handleInputChange}
-          >
+          <select id="default-language" className="input-group-select" value={practiceLanguage} onChange={(e) => setPracticeLanguage(e.target.value)}>
             <option value="en">English</option>
             <option value="zh">中文</option>
           </select>
