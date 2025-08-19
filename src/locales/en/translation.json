@@ -1,0 +1,63 @@
+{
+  "header": {
+    "introduction": "Introduction",
+    "practice": "Practice",
+    "records": "Records",
+    "profile": "Profile",
+    "logout": "Logout"
+  },
+  "introductionPage": {
+    "title": "Welcome to TheraLingua AI!",
+    "whatIsTitle": "What is TheraLingua AI?",
+    "whatIsText": "TheraLingua AI is your personal, AI-powered speech coach, designed to help you improve your pronunciation with confidence. Our system uses advanced Artificial Intelligence to listen to your speech, provide instant, detailed feedback, and create personalized practice sessions just for you.",
+    "howToUseTitle": "How to Use the Platform",
+    "howToUseText": "Getting started is simple. Follow this three-step guide to make the most of your practice:",
+    "step1": "<strong>1. Record Your Voice:</strong> Navigate to the <strong>'Practice'</strong> page. You will see a target word. Press the large microphone button, say the word clearly, and press it again to stop.",
+    "step2": "<strong>2. Get Instant Feedback:</strong> In seconds, our AI will show you a detailed analysis of your pronunciation. You'll see exactly which sounds (phonemes) were perfect and which need a little more work.",
+    "step3": "<strong>3. Practice & Improve:</strong> Based on the feedback, you can either <strong>'Try Again'</strong> to perfect the same word or click <strong>'Next'</strong> to move to a new word from a list generated specifically for you.",
+    "trackProgressTitle": "Track Your Progress",
+    "trackProgressText": "Don't forget to visit the <strong>'Records'</strong> page! Here, you can see your improvement over time with easy-to-understand charts. Watch your error rates go down and see which sounds you've mastered. This is a great way to stay motivated and celebrate your success."
+  },
+  "practicePage": {
+    "difficultyLevel": "Difficulty Level",
+    "levels": {
+      "kindergarten": "Kindergarten",
+      "primary_school": "Primary School",
+      "middle_school": "Middle School",
+      "adult": "Adult"
+    },
+    "tryAgain": "Try Again",
+    "tryAnother": "Try Another",
+    "next": "Next",
+    "record": "Record",
+    "analyzing": "Analyzing... Please wait."
+  },
+  "recordsPage": {
+    "title": "My Progress Dashboard",
+    "overallProgress": "Overall Progress (Error Rate %)",
+    "frequentErrors": "Most Frequent Phoneme Errors",
+    "weeklyFrequency": "Weekly Practice Frequency",
+    "difficultyDistribution": "Practice Difficulty Distribution",
+    "detailedHistory": "Detailed History",
+    "table": {
+      "date": "Date",
+      "targetWord": "Target Word",
+      "difficulty": "Difficulty",
+      "errorRate": "Error Rate",
+      "errorPhonemes": "Error Phonemes",
+      "details": "Details",
+      "hide": "Hide"
+    }
+  },
+  "profilePage": {
+    "title": "My Profile",
+    "userId": "User ID",
+    "accountCreated": "Account Created",
+    "emailAddress": "Email Address",
+    "userName": "User Name",
+    "newPassword": "New Password (leave blank to keep current)",
+    "confirmPassword": "Confirm New Password",
+    "updateButton": "Update Profile",
+    "defaultLanguage":"Default Language"
+  }
+}
