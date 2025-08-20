@@ -6,6 +6,12 @@
     "profile": "個人資料",
     "logout": "登出"
   },
+    "miniProfile": {
+    "language": "目前語言",
+    "level": "難度等級",
+    "target": "練習目標",
+    "errors": "常見錯誤"
+  },
   "introductionPage": {
     "title": "歡迎來到 TheraLingua AI！",
     "whatIsTitle": "什麼是 TheraLingua AI？",

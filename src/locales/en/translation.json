@@ -6,6 +6,12 @@
     "profile": "Profile",
     "logout": "Logout"
   },
+  "miniProfile": {
+    "language": "Language",
+    "level": "Level",
+    "target": "Target",
+    "errors": "Errors"
+  },
   "introductionPage": {
     "title": "Welcome to TheraLingua AI!",
     "whatIsTitle": "What is TheraLingua AI?",

@@ -13,6 +13,7 @@ import Profile from './pages/Profile';
 import ClickSpark from './components/ClickSpark';
 import Header from './components/Header';
 import LanguageSelector from './components/LanguageSelector'; // 2. 確保 LanguageSelector 被導入
+import MiniProfile from './components/MiniProfile';
 import './styles/App.css';
 
 // --- PrivateRoute 組件保持不變 ---
@@ -52,7 +53,7 @@ const AppLayout = ({ children, onLogout, practiceLanguage, setPracticeLanguage }
       <ClickSpark>
         {children}
       </ClickSpark>
-      {/* 5. 將 LanguageSelector 放回到它原本的位置，並傳遞處理函式 */}
+      <MiniProfile />
       <LanguageSelector onLanguageChange={handleLanguageChange} />
     </div>
   );

@@ -1,0 +1,84 @@
+/* src/styles/MiniProfile.css */
+
+.mini-profile-container {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  z-index: 1000;
+  background-color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.3s ease-in-out;
+  
+  /* --- ✨ MODIFICATION START ✨ --- */
+  width: 280px; /* 1. 設定一個固定的寬度 */
+  box-sizing: border-box; /* 確保 padding 不會影響總寬度 */
+  text-align: left;
+  /* --- ✨ MODIFICATION END ✨ --- */
+}
+
+.mini-profile-container:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* --- ✨ MODIFICATION START: 改為 Grid 佈局 ✨ --- */
+.profile-summary {
+  display: grid; /* 2. 使用 Grid 佈局 */
+  grid-template-columns: 1fr auto; /* 3. 分為兩列：主要內容佔滿剩餘空間，箭頭自適應寬度 */
+  align-items: center;
+  gap: 1rem; /* 設置列之間的間距 */
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-medium);
+}
+
+.profile-summary-info {
+  display: grid; /* 4. 內部也使用 Grid，方便對齊 */
+  grid-template-columns: 1fr; /* 單列佈局 */
+  gap: 2px; /* 設置 ID, Email, Username 之間的微小間距 */
+  overflow: hidden; /* 5. 防止長文字溢出 */
+}
+
+.profile-summary-info span {
+  white-space: nowrap; /* 防止文字換行 */
+  overflow: hidden;
+  text-overflow: ellipsis; /* 超出部分顯示省略號 */
+}
+/* --- ✨ MODIFICATION END ✨ --- */
+
+
+.profile-summary .arrow {
+  font-weight: 800;
+  transition: transform 0.2s ease;
+  justify-self: end; /* 讓箭頭在自己的格子裡靠右對齊 */
+}
+
+.mini-profile-container:hover .profile-summary .arrow {
+  transform: rotate(180deg);
+}
+
+.profile-details {
+  font-size: 0.85rem;
+  color: var(--text-dark);
+  /* 確保懸停時的內容高度與預設狀態相似，避免跳動 */
+  min-height: 54px; 
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.profile-details p {
+  margin: 0.3rem 0;
+  line-height: 1.4;
+}
+
+.profile-details strong {
+  color: var(--primary-color);
+  font-weight: 700;
+}
