@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 
 const ClickSpark = ({
-  sparkColor = "rgba(0, 0, 0, 0.95)",
+  sparkColor = "rgba(145, 145, 145, 0.95)",
   sparkSize = 10,
   sparkRadius = 15,
   sparkCount = 8,

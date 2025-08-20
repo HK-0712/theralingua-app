@@ -44,7 +44,7 @@ const Header = ({ activePage, onNavigate, onLogout, hasCompletedTest }) => {
             className={getButtonClass("InitialTest")} // 當 activePage 是 'InitialTest' 時，它會自動高亮
             onClick={() => onNavigate('/initial-test')}
           >
-            {t('header.initialTest', 'Initial Test')}
+            {t('header.initialTest')}
           </button>
         )}
 

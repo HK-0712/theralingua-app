@@ -15,7 +15,7 @@ export default function Profile({ setUserData }) {
     username: '',
     password: '',
     confirmPassword: '',
-    practice_language: 'en', // 初始化語言
+    practice_language: 'en',
   });
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState({ text: '', type: '' });

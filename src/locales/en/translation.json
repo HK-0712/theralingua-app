@@ -3,6 +3,7 @@
     "introduction": "Introduction",
     "practice": "Practice",
     "records": "Records",
+    "initialTest": "Initial Test",
     "profile": "Profile",
     "logout": "Logout"
   },
@@ -14,6 +15,11 @@
     "userId": "ID:",
     "emailAddress": "Email Address:",
     "userName": "User Name:"
+  },
+  "initialTest": {
+    "title": "Initial Placement Test",
+    "skip": "Skip",
+    "tryAnother": "Try Another"
   },
   "introductionPage": {
     "title": "Welcome to TheraLingua AI!",

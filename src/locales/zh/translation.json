@@ -3,10 +3,11 @@
     "introduction": "介紹",
     "practice": "練習",
     "records": "紀錄",
+    "initialTest": "初步測試",
     "profile": "個人資料",
     "logout": "登出"
   },
-    "miniProfile": {
+  "miniProfile": {
     "language": "目前語言",
     "level": "難度等級",
     "target": "練習目標",
@@ -14,6 +15,11 @@
     "userId": "使用者 ID:",
     "emailAddress": "電子郵件地址:",
     "userName": "使用者名稱:"
+  },
+  "initialTest": {
+    "title": "初始分級測試",
+    "skip": "跳過",
+    "tryAnother": "嘗試另一個"
   },
   "introductionPage": {
     "title": "歡迎來到 TheraLingua AI！",
