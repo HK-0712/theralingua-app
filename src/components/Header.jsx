@@ -1,34 +1,33 @@
+// src/components/Header.jsx (最終的、完全修正的版本)
+
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import "../styles/App.css";
+import "../styles/App.css"; // 確保導入了樣式檔案
 
-// --- ✨ MODIFICATION START ✨ ---
-// 1. 接收 activePage, onNavigate, 和 onLogout
 const Header = ({ activePage, onNavigate, onLogout }) => {
   const { t } = useTranslation();
+  const getButtonClass = (pageName) => (activePage === pageName ? "active" : "");
 
-  // 2. 恢復原來的 getButtonClass 邏輯，它現在依賴於傳入的 activePage
-  const getButtonClass = (pageName) => {
-    return activePage === pageName ? "active" : "";
-  };
-
-  // 3. 導航函式，現在呼叫傳入的 onNavigate
-  const handleNavigate = (path) => {
-    if (onNavigate) {
-      onNavigate(path);
-    }
-  };
-// --- ✨ MODIFICATION END ✨ ---
+  // 在新手測試頁面，這些按鈕應該被禁用
+  const isTestMode = activePage === 'InitialTest';
 
   return (
     <header className="app-header">
       <div className="header-title">TheraLingua AI</div>
       <nav className="header-nav">
-        {/* 4. 恢復原來的結構，class 依賴 pageName，點擊呼叫對應的路徑 */}
-        <button className={getButtonClass("Introduction")} onClick={() => handleNavigate('/introduction')}>{t('header.introduction')}</button>
-        <button className={getButtonClass("Practice")} onClick={() => handleNavigate('/practice')}>{t('header.practice')}</button>
-        <button className={getButtonClass("Records")} onClick={() => handleNavigate('/records')}>{t('header.records')}</button>
-        <button className={getButtonClass("Profile")} onClick={() => handleNavigate('/profile')}>{t('header.profile')}</button>
+        <button className={getButtonClass("Introduction")} onClick={() => onNavigate('/introduction')} disabled={isTestMode}>
+          {t('header.introduction')}
+        </button>
+        {/* ✨ 核心修正: 將 getButton-class 改為 getButtonClass ✨ */}
+        <button className={getButtonClass("Practice")} onClick={() => onNavigate('/practice')} disabled={isTestMode}>
+          {t('header.practice')}
+        </button>
+        <button className={getButtonClass("Records")} onClick={() => onNavigate('/records')} disabled={isTestMode}>
+          {t('header.records')}
+        </button>
+        <button className={getButtonClass("Profile")} onClick={() => onNavigate('/profile')} disabled={isTestMode}>
+          {t('header.profile')}
+        </button>
         <button className="logout" onClick={onLogout}>{t('header.logout')}</button>
       </nav>
     </header>

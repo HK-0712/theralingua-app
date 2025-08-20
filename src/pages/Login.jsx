@@ -24,10 +24,9 @@ export default function Login({ onLoginSuccess }) {
     setLoading(true);
 
     const formElements = event.target.elements;
-    const emailValue = formElements.email.value; // 我們統一稱之為 emailValue
+    const emailValue = formElements.email.value;
     const passwordValue = formElements.password.value;
 
-    // 根據模式（登入或註冊）準備 URL 和請求的 body
     const isLogin = isLoginMode;
     const url = isLogin
       ? 'http://127.0.0.1:8000/api/token/'
@@ -36,58 +35,50 @@ export default function Login({ onLoginSuccess }) {
     let bodyPayload;
 
     if (isLogin ) {
-      // 登入模式：後端 simple-jwt 需要 'username' 和 'password'
+      // --- ✨ 核心修正: 將 key 從 'username' 改為 'email' ✨ ---
+      // 這將與我們新的 MyTokenObtainPairSerializer 完全匹配
       bodyPayload = {
-        username: emailValue, // 將 email 的值賦給 'username'
+        email: emailValue,
         password: passwordValue,
       };
     } else {
-      // 註冊模式：後端 RegisterSerializer 需要 'email', 'username', 'password', 'confirm_password'
+      // 註冊模式保持不變，它是正確的
       const confirmPasswordValue = formElements['confirm-password'].value;
       bodyPayload = {
         email: emailValue,
-        username: emailValue, // 我們的設計是 username 和 email 相同
+        username: emailValue,
         password: passwordValue,
-        confirm_password: confirmPasswordValue, // 確保 key 與後端一致
+        confirm_password: confirmPasswordValue,
       };
     }
 
     try {
-      // 現在，我們使用上面準備好的 url 和 bodyPayload 進行 fetch
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload),
       });
 
       const data = await response.json();
 
-      // 統一的錯誤處理邏輯
       if (!response.ok) {
-        // 從後端的回應中提取最可能的錯誤訊息
-        const errorMessage = data.detail || data.password?.[0] || data.email?.[0] || JSON.stringify(data);
+        // ✨ 核心修正: 錯誤訊息現在可能在 'non_field_errors' 中
+        const errorMessage = data.detail || (data.non_field_errors && data.non_field_errors[0]) || data.password?.[0] || data.email?.[0] || JSON.stringify(data);
         throw new Error(errorMessage);
       }
 
-      // 根據模式處理成功後的回應
       if (isLogin) {
-        // 登入成功：儲存 token 並呼叫父元件的成功回呼
         localStorage.setItem('accessToken', data.access);
         localStorage.setItem('refreshToken', data.refresh);
-        onLoginSuccess(); // 通知 App.js 登入成功，可以進行頁面跳轉
+        onLoginSuccess();
       } else {
-        // 註冊成功：顯示成功訊息，並切換到登入模式
         setMessage({ text: 'Account created successfully! Please sign in.', type: 'success' });
         setIsLoginMode(true);
       }
 
     } catch (error) {
-      // 捕獲 fetch 網路錯誤或我們手動拋出的錯誤
       setMessage({ text: error.message, type: 'error' });
     } finally {
-      // 無論成功或失敗，最終都要停止載入動畫
       setLoading(false);
     }
   };

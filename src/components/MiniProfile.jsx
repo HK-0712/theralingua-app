@@ -1,20 +1,28 @@
+// src/components/MiniProfile.jsx (The final, correct version)
+
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import './MiniProfile.css';
 
-const fakeUserData = {
-  id: 'usr_1a2b3c4d',
-  email: 'a_very_long_user_email_address@example.com', // 使用一個較長的 email 測試省略號效果
-  username: 'TheraUser',
-  currentLanguage: 'English',
-  difficultyLevel: 'Primary School',
-  currentTarget: 'Improve /r/ sound',
-  errorPhoneme: '/r/, /l/',
-};
-
-const MiniProfile = () => {
+const MiniProfile = ({ userData }) => {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
+
+  if (!userData) {
+    return null;
+  }
+
+  const getDisplayLanguage = (langCode) => {
+    const languageMap = { en: 'English', zh: '繁體中文' };
+    return languageMap[langCode] || langCode;
+  };
+
+  // --- ✨ 核心修正: 直接從 userData 解構出頂層屬性 ✨ ---
+  const { id, email, username, settings } = userData;
+  
+  // 從 settings 中安全地獲取語言和等級
+  const practiceLanguage = settings ? settings.language : 'en';
+  const difficultyLevel = settings ? settings.cur_lvl : 'N/A';
 
   return (
     <div 
@@ -22,24 +30,23 @@ const MiniProfile = () => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {isHovered ? (
-        <div className="profile-details">
-          <p><strong>{t('miniProfile.language')}:</strong> {fakeUserData.currentLanguage}</p>
-          <p><strong>{t('miniProfile.level')}:</strong> {fakeUserData.difficultyLevel}</p>
-          <p><strong>{t('miniProfile.target')}:</strong> {fakeUserData.currentTarget}</p>
-          <p><strong>{t('miniProfile.errors')}:</strong> {fakeUserData.errorPhoneme}</p>
-        </div>
-      ) : (
-        // ✨ MODIFICATION: 調整 JSX 結構以適應 Grid 佈局
-        <div className="profile-summary">
-          <div className="profile-summary-info">
-            <span>{fakeUserData.id}</span>
-            <span>{fakeUserData.email}</span>
-            <span>{fakeUserData.username}</span>
-          </div>
-          <span className="arrow">^</span>
-        </div>
-      )}
+      <div className="profile-content">
+        {isHovered ? (
+          <>
+            <p><strong>{t('miniProfile.language', 'Language')}:</strong> {getDisplayLanguage(practiceLanguage)}</p>
+            <p><strong>{t('miniProfile.level', 'Level')}:</strong> {difficultyLevel}</p>
+            <p><strong>{t('miniProfile.target', 'Target')}:</strong> {'N/A'}</p>
+            <p><strong>{t('miniProfile.errors', 'Errors')}:</strong> {'N/A'}</p>
+          </>
+        ) : (
+          <>
+            {/* ✨ 現在這裡會正確地顯示 ID 和 Username ✨ */}
+            <p><strong>{t('miniProfile.userId')}</strong> {id}</p>
+            <p><strong>{t('miniProfile.emailAddress')}</strong> {email}</p>
+            <p><strong>{t('miniProfile.userName')}</strong> {username || 'N/A'}</p>
+          </>
+        )}
+      </div>
     </div>
   );
 };

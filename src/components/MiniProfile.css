@@ -5,21 +5,18 @@
   bottom: 1.5rem;
   left: 1.5rem;
   z-index: 1000;
-  background-color: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 0.75rem 1.25rem;
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background-color: rgba(255, 255, 255, 0.85); /* 稍微增加不透明度，讓文字更清晰 */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 0.85rem 1.25rem; /* 稍微增加內邊距 */
+  border-radius: 0.75rem; /* 圓角更大一些 */
+  box-shadow: 0 4px_12px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--border-color);
   cursor: pointer;
   transition: all 0.3s ease-in-out;
-  
-  /* --- ✨ MODIFICATION START ✨ --- */
-  width: 280px; /* 1. 設定一個固定的寬度 */
-  box-sizing: border-box; /* 確保 padding 不會影響總寬度 */
+  width: 300px; /* 可以適當加寬以容納標籤 */
+  box-sizing: border-box;
   text-align: left;
-  /* --- ✨ MODIFICATION END ✨ --- */
 }
 
 .mini-profile-container:hover {
@@ -81,4 +78,27 @@
 .profile-details strong {
   color: var(--primary-color);
   font-weight: 700;
+}
+
+.profile-content {
+  display: grid;
+  grid-template-columns: 1fr; /* 預設為單列佈局 */
+  gap: 0.4rem; /* 設置行之間的間距 */
+  font-size: 0.8rem;
+  color: var(--text-dark);
+}
+
+.profile-content p {
+  margin: 0;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* 對所有行應用省略號，防止溢出 */
+}
+
+.profile-content strong {
+  /* 讓標籤和數值有不同的顏色和字重 */
+  color: var(--primary-color);
+  font-weight: 700;
+  margin-right: 0.5em; /* 在標籤和數值之間增加一些間距 */
 }

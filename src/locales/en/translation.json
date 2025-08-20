@@ -10,7 +10,10 @@
     "language": "Language",
     "level": "Level",
     "target": "Target",
-    "errors": "Errors"
+    "errors": "Errors",
+    "userId": "ID:",
+    "emailAddress": "Email Address:",
+    "userName": "User Name:"
   },
   "introductionPage": {
     "title": "Welcome to TheraLingua AI!",

@@ -10,7 +10,10 @@
     "language": "目前語言",
     "level": "難度等級",
     "target": "練習目標",
-    "errors": "常見錯誤"
+    "errors": "常見錯誤",
+    "userId": "使用者 ID:",
+    "emailAddress": "電子郵件地址:",
+    "userName": "使用者名稱:"
   },
   "introductionPage": {
     "title": "歡迎來到 TheraLingua AI！",

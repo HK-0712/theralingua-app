@@ -1,148 +1,129 @@
-// src/App.js
+// src/App.jsx (The final, truly robust version)
 
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-// --- 導入所有組件 (保持不變) ---
 import Login from './pages/Login';
 import Introduction from './pages/Introduction';
 import Practice from './pages/Practice';
 import Records from './pages/Records';
 import Profile from './pages/Profile';
+import InitialTest from './pages/InitialTest';
 import ClickSpark from './components/ClickSpark';
 import Header from './components/Header';
 import LanguageSelector from './components/LanguageSelector';
 import MiniProfile from './components/MiniProfile';
 import './styles/App.css';
 
-// --- PrivateRoute 組件 (保持不變) ---
 const PrivateRoute = ({ children }) => {
   const isAuthenticated = !!localStorage.getItem('accessToken');
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 };
 
-// --- AppLayout 組件 (保持不變，完全尊重您的設計) ---
-const AppLayout = ({ children, onLogout, setPracticeLanguageForUI }) => {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { i18n } = useTranslation();
-
-  const getActivePage = (pathname) => {
-    if (pathname.startsWith('/introduction')) return 'Introduction';
-    if (pathname.startsWith('/practice')) return 'Practice';
-    if (pathname.startsWith('/records')) return 'Records';
-    if (pathname.startsWith('/profile')) return 'Profile';
-    return '';
-  };
-
-  // UI 語言切換函式 (保持不變)
-  const handleLanguageChange = (lang) => {
-    i18n.changeLanguage(lang);
-    // 注意：這裡我們不再呼叫 setPracticeLanguage，因為 UI 語言和練習語言是分開的
-  };
-
-  return (
-    <div className="app-container">
-      <Header 
-        activePage={getActivePage(location.pathname)} 
-        onNavigate={navigate}
-        onLogout={onLogout}
-      />
-      <ClickSpark>
-        {children}
-      </ClickSpark>
-      <MiniProfile />
-      <LanguageSelector onLanguageChange={handleLanguageChange} />
-    </div>
-  );
+const MainAppRoute = ({ children }) => {
+  const hasCompletedTest = !!localStorage.getItem('hasCompletedInitialTest');
+  return hasCompletedTest ? children : <Navigate to="/initial-test" replace />;
 };
 
-// --- App 組件 (負責狀態管理和路由) ---
 function App() {
   const navigate = useNavigate();
-
-  // --- 狀態管理 ---
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('accessToken'));
-  
-  // ✨ 核心修正: 這裡的 practiceLanguage 狀態完全由 localStorage 初始化和更新。
-  // 它的唯一職責，就是作為一個可靠的資料源，傳遞給需要它的子元件。
-  const [practiceLanguage, setPracticeLanguage] = useState(
-    () => localStorage.getItem('practiceLanguage') || 'en'
-  );
+  const [practiceLanguage, setPracticeLanguage] = useState(() => localStorage.getItem('practiceLanguage') || 'en');
+  const [userData, setUserData] = useState(null);
 
-  // ✨ 核心修正: 這個 useEffect 確保任何對 practiceLanguage 狀態的修改，
-  // 都會被立刻、自動地儲存到 localStorage，從而實現跨頁面重新整理的「記憶」。
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        try {
+          const response = await fetch('http://127.0.0.1:8000/api/profile/', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          } );
+          if (response.ok) {
+            const data = await response.json();
+            setUserData(data);
+          } else {
+            // 如果獲取資料失敗 (例如 token 過期)，則登出
+            handleLogout();
+          }
+        } catch (error) {
+          console.error("Failed to fetch user data:", error);
+          // 網路錯誤也可能需要登出
+          handleLogout();
+        }
+      }
+    };
+    if (isAuthenticated) {
+      fetchUserData();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
   useEffect(() => {
     localStorage.setItem('practiceLanguage', practiceLanguage);
   }, [practiceLanguage]);
 
-  // --- 核心邏輯函式 (保持不變) ---
+  // --- ✨ 核心修正: 讓登入成功後的跳轉更直接、更健壯 ---
   const handleLoginSuccess = () => {
+    // 1. 同步設定狀態，這會觸發 useEffect 去獲取使用者資料
     setIsAuthenticated(true);
-    // 登入成功時，從 localStorage 讀取使用者上次儲存的練習語言偏好
-    const savedLanguage = localStorage.getItem('practiceLanguage') || 'en';
-    setPracticeLanguage(savedLanguage);
-    navigate('/introduction');
+    // 2. 不再等待非同步操作，立即導航到主頁
+    //    PrivateRoute 會保護這個路由，而此時 token 已經存在，所以導航會成功
+    navigate('/'); 
   };
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('hasCompletedInitialTest');
+    localStorage.removeItem('initialTestState');
     setIsAuthenticated(false);
+    setUserData(null);
     navigate('/login');
   };
 
+  const MainLayout = ({ children }) => {
+    const location = useLocation();
+    const getActivePage = (pathname) => {
+      if (pathname.startsWith('/introduction')) return 'Introduction';
+      if (pathname.startsWith('/practice')) return 'Practice';
+      if (pathname.startsWith('/records')) return 'Records';
+      if (pathname.startsWith('/profile')) return 'Profile';
+      return '';
+    };
+    return (
+      <div className="app-container">
+        <Header activePage={getActivePage(location.pathname)} onNavigate={navigate} onLogout={handleLogout} />
+        <ClickSpark>{children}</ClickSpark>
+        <MiniProfile userData={userData} />
+        <LanguageSelector />
+      </div>
+    );
+  };
+
+  const TestLayout = ({ children }) => (
+    <div className="app-container">
+      <Header activePage="InitialTest" onNavigate={navigate} onLogout={handleLogout} />
+      <ClickSpark>{children}</ClickSpark>
+      <MiniProfile userData={userData} />
+    </div>
+  );
+
   return (
     <Routes>
-      <Route 
-        path="/login" 
-        element={
-          isAuthenticated ? <Navigate to="/introduction" replace /> : (
-            <ClickSpark>
-              <Login onLoginSuccess={handleLoginSuccess} />
-            </ClickSpark>
-          )
-        } 
-      />
-
-      {/* --- 私有路由 --- */}
-      {/* 我們將 handleLogout 傳遞給 AppLayout */}
-      {/* 我們將 practiceLanguage 和 setPracticeLanguage 傳遞給需要它們的頁面 */}
-      <Route 
-        path="/introduction" 
-        element={<PrivateRoute><AppLayout onLogout={handleLogout}><Introduction /></AppLayout></PrivateRoute>} 
-      />
-      <Route 
-        path="/practice" 
-        element={<PrivateRoute><AppLayout onLogout={handleLogout}><Practice practiceLanguage={practiceLanguage} /></AppLayout></PrivateRoute>} 
-      />
-      <Route 
-        path="/records" 
-        element={<PrivateRoute><AppLayout onLogout={handleLogout}><Records practiceLanguage={practiceLanguage} /></AppLayout></PrivateRoute>} 
-      />
-      <Route 
-        path="/profile" 
-        element={
-          <PrivateRoute>
-            <AppLayout onLogout={handleLogout}>
-              <Profile 
-                practiceLanguage={practiceLanguage} 
-                setPracticeLanguage={setPracticeLanguage} 
-              />
-            </AppLayout>
-          </PrivateRoute>
-        } 
-      />
-
-      {/* 預設路由 (保持不變) */}
-      <Route path="/" element={<Navigate to={isAuthenticated ? "/introduction" : "/login"} replace />} />
-      <Route path="*" element={<Navigate to={isAuthenticated ? "/introduction" : "/login"} replace />} />
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <ClickSpark><Login onLoginSuccess={handleLoginSuccess} /></ClickSpark>} />
+      <Route path="/" element={<PrivateRoute>{localStorage.getItem('hasCompletedInitialTest') ? <Navigate to="/introduction" /> : <Navigate to="/initial-test" />}</PrivateRoute>} />
+      <Route path="/introduction" element={<PrivateRoute><MainAppRoute><MainLayout><Introduction /></MainLayout></MainAppRoute></PrivateRoute>} />
+      <Route path="/practice" element={<PrivateRoute><MainAppRoute><MainLayout><Practice practiceLanguage={practiceLanguage} /></MainLayout></MainAppRoute></PrivateRoute>} />
+      <Route path="/records" element={<PrivateRoute><MainAppRoute><MainLayout><Records practiceLanguage={practiceLanguage} /></MainLayout></MainAppRoute></PrivateRoute>} />
+      <Route path="/profile" element={<PrivateRoute><MainAppRoute><MainLayout><Profile setUserData={setUserData} /></MainLayout></MainAppRoute></PrivateRoute>} />
+      <Route path="/initial-test" element={<PrivateRoute>{localStorage.getItem('hasCompletedInitialTest') ? <Navigate to="/introduction" /> : <TestLayout><InitialTest /></TestLayout>}</PrivateRoute>} />
+      <Route path="*" element={<p>Page Not Found</p>} />
     </Routes>
   );
 }
 
-// --- AppWrapper (保持不變) ---
 export default function AppWrapper() {
   return (
     <BrowserRouter>

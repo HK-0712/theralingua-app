@@ -1,0 +1,25 @@
+{
+  "Primary School": [
+    "cat", "dog", "sun", "bed", "pig", "cup", "ten", "sit", "box", "run",
+    "red", "lip", "map", "hot", "fin", "get", "man", "ship", "fish", "shop",
+    "chin", "this", "that", "with", "king"
+  ],
+  "Secondary School": [
+    "apple", "train", "green", "light", "right", "three", "think", "bread",
+    "chair", "house", "mouse", "cloud", "flower", "start", "play", "sleep",
+    "sheep", "watch", "orange", "purple", "seven", "water", "very", "well", "zebra"
+  ],
+  "University": [
+    "vegetable", "computer", "question", "beautiful", "family", "important",
+    "knowledge", "language", "measure", "pleasure", "vision", "squirrel",
+    "world", "earth", "island", "science", "breathe", "clothes", "strength",
+    "through", "thought", "although", "schedule", "anxious", "psychology"
+  ],
+  "Professor": [
+    "onomatopoeia", "pronunciation", "entrepreneur", "conscientious", "phenomenon",
+    "rhythm", "anesthesiologist", "Worcestershire", "choir", "colonel",
+    "lieutenant", "bourgeoisie", "paradigm", "hierarchy", "juxtaposition",
+    "idiosyncratic", "ubiquitous", "ephemeral", "mellifluous", "serendipity",
+    "eloquence", "ineffable", "nefarious", "somnambulist", "archipelago"
+  ]
+}
