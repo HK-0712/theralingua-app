@@ -58,6 +58,6 @@
     "newPassword": "New Password (leave blank to keep current)",
     "confirmPassword": "Confirm New Password",
     "updateButton": "Update Profile",
-    "defaultLanguage":"Default Language"
+    "practiceLanguage":"Practice Language"
   }
 }

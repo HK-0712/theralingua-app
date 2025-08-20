@@ -58,6 +58,6 @@
     "newPassword": "新密碼 (留空以保持不變)",
     "confirmPassword": "確認新密碼",
     "updateButton": "更新資料",
-    "defaultLanguage":"預設語言"
+    "practiceLanguage":"練習語言"
   }
 }
