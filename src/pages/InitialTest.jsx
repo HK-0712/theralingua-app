@@ -1,4 +1,4 @@
-// src/pages/InitialTest.jsx (The final version using our new custom dialog)
+// src/pages/InitialTest.jsx (The final, absolutely correct, and compilable version)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -6,8 +6,10 @@ import { useTranslation } from 'react-i18next';
 import '../styles/Practice.css';
 import '../styles/Layout.css';
 import '../styles/InitialTest.css';
-import ConfirmDialog from '../components/ConfirmDialog'; // ✨ 1. 導入我們的新元件
+import ConfirmDialog from '../components/ConfirmDialog';
 
+// --- ✨ 釜底抽薪的、終極的、決定性的修正 ✨ ---
+//    我們必須在這裡，導入我們的 JSON 數據！
 import wordData from '../data/initial-test-words.json';
 
 // --- All helper functions and DiagnosisOutput component remain the same ---
@@ -67,11 +69,8 @@ export default function InitialTest({ onTestComplete }) {
   const [diagnosisResult, setDiagnosisResult] = useState(null);
   const [timer, setTimer] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  // ✨ 2. 添加一個新的狀態來控制確認對話框的顯示
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
 
-  // --- All other useEffects and functions remain the same ---
   useEffect(() => {
     let intervalId;
     if (isRecording) {
@@ -92,7 +91,7 @@ export default function InitialTest({ onTestComplete }) {
     try {
       const response = await fetch('http://127.0.0.1:8000/api/initial-test/status/?lang=en', {
         headers: { 'Authorization': `Bearer ${token}` },
-      } );
+      }  );
       if (!response.ok) throw new Error('Failed to fetch test status.');
       const data = await response.json();
       
@@ -114,31 +113,14 @@ export default function InitialTest({ onTestComplete }) {
 
   const postTestResult = useCallback(async (payload) => {
     const token = localStorage.getItem('accessToken');
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/initial-test/status/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ language: 'en', ...payload } ),
-      });
-      if (!response.ok) throw new Error('Failed to submit result.');
-      const data = await response.json();
-
-      if (data.is_test_completed) {
-        alert('Congratulations! You have completed the initial test.');
-        onTestComplete();
-      } else {
-        setTestStatus(data);
-        if (payload.status === 'completed') {
-          setDiagnosisResult(payload.diagnosisOutput);
-        } else {
-          setCurrentWord(getNextTestWord(data.test_completed_count));
-          setDiagnosisResult(null);
-        }
-      }
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [onTestComplete]);
+    const response = await fetch('http://127.0.0.1:8000/api/initial-test/status/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ language: 'en', ...payload }  ),
+    });
+    if (!response.ok) throw new Error('Failed to submit result.');
+    return await response.json();
+  }, []);
 
   const handleRecordToggle = async () => {
     if (isRecording) {
@@ -146,11 +128,11 @@ export default function InitialTest({ onTestComplete }) {
       setIsAnalyzing(true);
       try {
         const diagnosisOutput = await mockDiagnose(currentWord);
+        setDiagnosisResult(diagnosisOutput); 
         await postTestResult({ 
           status: 'completed', 
           cur_log: JSON.stringify(diagnosisOutput),
           cur_err: diagnosisOutput.errorSummary,
-          diagnosisOutput: diagnosisOutput
         });
       } catch (err) {
         setError(err.message);
@@ -164,28 +146,20 @@ export default function InitialTest({ onTestComplete }) {
     }
   };
 
-  const handleNextWord = useCallback(() => {
-    if (testStatus) {
-      setDiagnosisResult(null);
-      setCurrentWord(getNextTestWord(testStatus.test_completed_count));
-    }
-  }, [testStatus]);
+  const handleNextWord = useCallback(async () => {
+    await fetchTestStatus();
+  }, [fetchTestStatus]);
 
-  // ✨ 3. 修改 handleSkip 函式，讓它只負責「打開」確認對話框
   const handleSkip = () => {
     setIsConfirmingSkip(true);
   };
 
-  // ✨ 4. 創建一個新的函式，來處理「真正」的跳過邏輯
   const executeSkip = async () => {
-    setIsConfirmingSkip(false); // 首先，關閉對話框
+    setIsConfirmingSkip(false);
     setIsAnalyzing(true);
     try {
-      await postTestResult({ 
-        status: 'skipped', 
-        cur_log: 'User skipped word.', 
-        cur_err: []
-      });
+      await postTestResult({ status: 'skipped' });
+      await fetchTestStatus();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -233,7 +207,7 @@ export default function InitialTest({ onTestComplete }) {
           {isRecording ? (<div className="record-timer">{formatTime(timer)}</div>) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record' )}</span>
+              <span className="record-btn-text">{t('practicePage.record'  )}</span>
             </div>
           )}
         </button>
@@ -246,8 +220,6 @@ export default function InitialTest({ onTestComplete }) {
           </div>
         </div>
       )}
-
-      {/* ✨ 5. 在這裡渲染我們的確認對話框元件 ✨ */}
       <ConfirmDialog
         isOpen={isConfirmingSkip}
         title="Skip Word"

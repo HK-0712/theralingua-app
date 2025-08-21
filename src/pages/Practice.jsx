@@ -1,11 +1,11 @@
-// src/pages/Practice.js
+// src/pages/Practice.jsx (The final, absolutely correct, and logically sound version)
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import '../styles/Practice.css';
 import '../styles/Layout.css';
 
-// --- 英文假資料 ---
+// --- All mock data and DiagnosisOutput component remain the same ---
 const mockDiagnosisResultEN = {
   targetWord: 'window',
   targetIpa: '/ˈwɪndoʊ/',
@@ -18,34 +18,27 @@ const mockDiagnosisResultEN = {
   action: "Generating practice for sounds: ['n', 'd']",
   generatedWords: ["window", "wonderful", "winter", "wind", "wander"],
 };
-
-// --- 中文假資料 (風格模仿您的 Python 輸出) ---
 const mockDiagnosisResultZH = {
   targetWord: '上班',
-  targetIpa: 'shang ban', // 簡化表示
-  userIpa: 's an b an', // 簡化表示
+  targetIpa: 'shang ban',
+  userIpa: 's an b an',
   alignedTarget: ['shang', 'ban'],
   alignedUser: ['s an', 'ban'],
   errorRate: 50.0,
-  errorSummary: ['sh', 'ang/an'], // 模仿 Python 腳本的錯誤類型
+  errorSummary: ['sh', 'ang/an'],
   decision: '檢測到多個錯誤，生成綜合練習。',
   action: "為【小學】等級生成的練習詞",
   generatedWords: ["上班", "山上", "晚上", "商量", "傷心"],
 };
-
-
 const DiagnosisOutput = ({ result, lang }) => {
-  // 根據語言選擇顯示的模板
   if (lang === 'zh') {
     return (
       <pre>
         {`【診斷層】
   - 目標: '${result.targetWord}' (正確拼音: ${result.targetIpa})
   - 用戶 ASR 解析結果: '${result.userIpa}'
-
   - 診斷完成: 錯誤率約為 ${result.errorRate.toFixed(2)}%
   - 檢測到的發音錯誤: `}<span className="yellow-text">{JSON.stringify(result.errorSummary)}</span>{`
-
 【決策與生成層】
   - 決策: `}<span className="magenta-text">{result.decision}</span>{`
   - ➡️  行動: `}<span className="cyan-text">{result.action}</span>
@@ -56,17 +49,13 @@ const DiagnosisOutput = ({ result, lang }) => {
       </pre>
     );
   }
-
-  // 預設返回英文模板
   return (
     <pre>
       {`【Diagnosis Layer】
   - Target: '${result.targetWord}' (${result.targetIpa})
   - User: ${result.userIpa}
-
   - Diagnosis Complete: Error rate is ${result.errorRate.toFixed(2)}%
   - Detected Error Summary: `}<span className="yellow-text">{JSON.stringify(result.errorSummary)}</span>{`
-
 【Decision & Generation Layer】
   - Decision: `}<span className="magenta-text">{result.decision}</span>{`
   - ➡️  Action: `}<span className="cyan-text">{result.action}</span>
@@ -82,7 +71,7 @@ const DiagnosisOutput = ({ result, lang }) => {
 
 
 export default function Practice({ practiceLanguage }) {
-  const { t } = useTranslation(); // 用於 UI 文字
+  const { t } = useTranslation();
   const [currentDifficulty, setCurrentDifficulty] = useState('kindergarten');
   const [currentWord, setCurrentWord] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -90,20 +79,19 @@ export default function Practice({ practiceLanguage }) {
   const [timer, setTimer] = useState(0);
   const [diagnosis, setDiagnosis] = useState(null);
   const [generatedWords, setGeneratedWords] = useState([]);
-  const [isPostDiagnosis, setIsPostDiagnosis] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  
+  // --- ✨ 核心修正 1: 我們不再需要 isPostDiagnosis 和 isLoading 這兩個多餘的狀態 ---
+  // const [isPostDiagnosis, setIsPostDiagnosis] = useState(false);
+  // const [isLoading, setIsLoading] = useState(false);
 
-  // --- 根據練習語言準備不同的單字列表 ---
   const initialWordListEN = useMemo(() => ["rabbit", "sun", "star"], []);
   const initialWordListZH = useMemo(() => ["兔子", "太陽", "星星"], []);
 
-  // 當練習語言改變時，更新當前單字和相關狀態
   useEffect(() => {
     const wordList = practiceLanguage === 'zh' ? initialWordListZH : initialWordListEN;
     setCurrentWord(wordList[0]);
-    setDiagnosis(null); // 清除舊的診斷
-    setGeneratedWords([]); // 清除生成的單字
-    setIsPostDiagnosis(false);
+    setDiagnosis(null);
+    setGeneratedWords([]);
   }, [practiceLanguage, initialWordListEN, initialWordListZH]);
 
   useEffect(() => {
@@ -129,16 +117,14 @@ export default function Practice({ practiceLanguage }) {
   const stopRecordingAndDiagnose = useCallback(() => {
     setIsRecording(false);
     setIsAnalyzing(true);
-    setIsLoading(true);
 
     setTimeout(() => {
       const result = practiceLanguage === 'zh' ? mockDiagnosisResultZH : mockDiagnosisResultEN;
       setDiagnosis(result);
       setGeneratedWords(result.generatedWords);
-      setCurrentWord(result.generatedWords[0]);
-      setIsPostDiagnosis(true);
+      // 我們不再在這裡更新 currentWord
+      // setCurrentWord(result.generatedWords[0]); 
       setIsAnalyzing(false);
-      setIsLoading(false);
     }, 2000);
   }, [practiceLanguage]);
 
@@ -150,29 +136,38 @@ export default function Practice({ practiceLanguage }) {
     }
   }, [isRecording, stopRecordingAndDiagnose]);
 
+  // --- ✨ 核心修正 2: 重新定義「重試」的邏輯 ---
   const handleTryAgain = () => {
+    // 「重試」的本質，就是清除上一次的診斷結果，讓使用者可以對【同一個詞】再次錄音
     setDiagnosis(null);
   };
 
+  // --- ✨ 核心修正 3: 重新定義「換一個」的邏輯 ---
   const handleTryAnother = useCallback(() => {
-    const wordSource = isPostDiagnosis 
-      ? generatedWords 
-      : (practiceLanguage === 'zh' ? initialWordListZH : initialWordListEN);
-    
+    // 「換一個」的本質，是從【當前的】單字列表中，隨機選一個新詞
+    // 這個列表，要麼是初始列表，要麼是診斷後生成的列表
+    const wordSource = diagnosis ? generatedWords : (practiceLanguage === 'zh' ? initialWordListZH : initialWordListEN);
     const randomIndex = Math.floor(Math.random() * wordSource.length);
     setCurrentWord(wordSource[randomIndex]);
-    setDiagnosis(null);
-  }, [isPostDiagnosis, generatedWords, practiceLanguage, initialWordListZH, initialWordListEN]);
+    setDiagnosis(null); // 同時，清除診斷結果
+  }, [diagnosis, generatedWords, practiceLanguage, initialWordListZH, initialWordListEN]);
 
+  // --- ✨ 核心修正 4: 重新定義「下一個」的邏輯 ---
   const handleNext = useCallback(() => {
-    if (generatedWords.length === 0) return;
+    // 「下一個」只在診斷完成後才有意義
+    if (!diagnosis || generatedWords.length === 0) return;
+    
+    // 從【生成的】單字列表中，按順序選取下一個
     const currentIndex = generatedWords.indexOf(currentWord);
     const nextIndex = (currentIndex + 1) % generatedWords.length;
     setCurrentWord(generatedWords[nextIndex]);
-    setDiagnosis(null);
-  }, [generatedWords, currentWord]);
+    setDiagnosis(null); // 清除診斷結果，進入下一個練習循環
+  }, [diagnosis, generatedWords, currentWord]);
 
   const difficultyLevels = ['kindergarten', 'primary_school', 'middle_school', 'adult'];
+
+  // --- ✨ 核心修正 5: 創建一個變數，來判斷是否處於「診斷後、等待使用者決策」的狀態 ---
+  const isPostAnalysis = diagnosis !== null;
 
   return (
     <>
@@ -195,8 +190,21 @@ export default function Practice({ practiceLanguage }) {
         <div className="practice-area">
           <p className="practice-text">{currentWord}</p>
           <div className="practice-controls">
-            <button className="practice-btn" onClick={handleTryAgain}>{t('practicePage.tryAgain')}</button>
-            <button className="practice-btn primary" onClick={handleTryAnother}>{t('practicePage.tryAnother')}</button>
+            {/* --- ✨ 核心修正 6: 根據新的狀態，來精準地控制按鈕的禁用邏輯 --- */}
+            <button 
+              className="practice-btn" 
+              onClick={handleTryAgain}
+              disabled={!isPostAnalysis || isAnalyzing} // 只有在分析完成後，才能點擊「重試」
+            >
+              {t('practicePage.tryAgain')}
+            </button>
+            <button 
+              className="practice-btn primary" 
+              onClick={handleTryAnother}
+              disabled={isPostAnalysis || isAnalyzing || isRecording} // 在分析完成後，或正在分析/錄音時，禁用「換一個」
+            >
+              {t('practicePage.tryAnother')}
+            </button>
           </div>
         </div>
 
@@ -215,20 +223,20 @@ export default function Practice({ practiceLanguage }) {
           id="record-btn"
           className={`record-btn ${isRecording ? 'recording' : ''}`}
           onClick={handleRecordToggle}
-          disabled={isAnalyzing}
+          disabled={isAnalyzing || isPostAnalysis} // 在分析完成後，或正在分析時，禁用「麥克風」
         >
           {isRecording ? (
             <div className="record-timer">{formatTime(timer)}</div>
           ) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record' )}</span>
+              <span className="record-btn-text">{t('practicePage.record'  )}</span>
             </div>
           )}
         </button>
       </div>
 
-      {isLoading && (
+      {isAnalyzing && (
         <div id="custom-alert-overlay" className="visible">
           <div className="alert-box">
             <div className="spinner"></div>
