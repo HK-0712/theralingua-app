@@ -1,11 +1,10 @@
-// src/App.jsx (The Final DEBUGGING Version)
+// src/App.jsx (The Final Version with Correct Guarding)
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useSession, useSupabaseClient, SessionContextProvider } from '@supabase/auth-helpers-react';
 import { supabase } from './supabaseClient';
 
-// ... 所有 import 保持不變 ...
 import Login from './pages/Login';
 import Introduction from './pages/Introduction';
 import Practice from './pages/Practice';
@@ -21,80 +20,75 @@ import './styles/App.css';
 
 const PrivateRoute = ({ children }) => {
   const session = useSession();
+  const location = useLocation(); // 使用 location 來建立返回路徑
   const isLoading = session === undefined;
+
   if (isLoading) {
-    console.log("🕵️‍♂️ [PrivateRoute] Status: Loading session...");
     return <div>Loading authentication status...</div>;
   }
+  
   if (!session) {
-    console.log("🕵️‍♂️ [PrivateRoute] Status: No session found. Redirecting to /login.");
+    // 保存當前 URL，以便登入後返回（使用 location.pathname 保留 query/hash）
+    return <Navigate to="/login" state={{ from: location.pathname + location.search + location.hash }} replace />;
   }
-  return session ? children : <Navigate to="/login" replace />;
+
+  return children;
 };
 
 function App() {
   const navigate = useNavigate();
+  const location = useLocation(); // 供整個 App 使用（例如 login redirect / initial-test returnTo）
   const session = useSession();
   const supabaseClient = useSupabaseClient();
 
   const [userData, setUserData] = useState(null);
   const [hasCompletedTest, setHasCompletedTest] = useState(false);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
-
-  // ======================= 偵錯日誌植入點 =======================
-  console.log("--- 🔄 App Component Rendered ---");
-  console.log(`SESSION: ${session ? session.user.id : 'null'}`);
-  console.log(`USER_DATA: ${userData ? JSON.stringify(userData) : 'null'}`);
-  console.log(`IS_LOADING_PROFILE: ${isLoadingProfile}`);
-  console.log("---------------------------------");
-  // ============================================================
+  // ✨ 核心修正 1: 讓 isLoadingProfile 的初始值為 true，這更符合邏輯
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   useEffect(() => {
-    console.log("--- ⚡️ useEffect Triggered ---");
-    console.log(`SESSION in useEffect: ${session ? 'Exists' : 'null'}`);
+    const fetchUserData = async () => {
+      if (session) {
+        // 我們不再需要在異步函數開始時設定 loading，因為初始值已經是 true
+        // setIsLoadingProfile(true); 
+        try {
+          const { data, error } = await supabaseClient
+            .from('profiles')
+            .select('*, user_settings(*)')
+            .eq('id', session.user.id)
+            .single();
 
-    if (session) {
-      if (!userData) {
-        console.log("🚀 [useEffect] Condition met: Session exists, userData is null. Starting to fetch...");
-        setIsLoadingProfile(true);
-        supabaseClient
-          .from('profiles')
-          .select('*, user_settings(*)')
-          .eq('id', session.user.id)
-          .single()
-          .then(({ data, error }) => {
-            if (error) {
-              console.error("❌ [useEffect] FATAL ERROR while fetching user data:", error);
-              // 如果獲取失敗，登出用戶
-              supabaseClient.auth.signOut();
-            } else {
-              console.log("✅ [useEffect] User data fetched successfully:", data);
-              const finalUserData = { 
-                ...data,
-                email: session.user.email, 
-                created_at: session.user.created_at,
-              };
-              setUserData(finalUserData);
-              setHasCompletedTest(!!finalUserData.user_settings?.sug_lvl);
-              console.log("✅ [useEffect] State updated. hasCompletedTest is now:", !!finalUserData.user_settings?.sug_lvl);
-            }
-            setIsLoadingProfile(false);
-          });
+          if (error) throw error;
+
+          const finalUserData = { 
+            ...data,
+            email: session.user.email, 
+            created_at: session.user.created_at,
+          };
+          setUserData(finalUserData);
+          setHasCompletedTest(!!finalUserData.user_settings?.sug_lvl);
+
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          await supabaseClient.auth.signOut();
+        } finally {
+          setIsLoadingProfile(false);
+        }
+      } else {
+        setUserData(null);
+        setHasCompletedTest(false);
+        setIsLoadingProfile(false); // 確保在登出時也設置為 false
       }
-    } else {
-      console.log("🧹 [useEffect] Condition met: No session. Clearing user data.");
-      setUserData(null);
-      setHasCompletedTest(false);
-    }
-  }, [session, userData, supabaseClient]);
+    };
+
+    fetchUserData();
+  }, [session, supabaseClient]);
 
   const handleLogout = useCallback(async () => {
-    console.log("🚪 [handleLogout] User clicked logout.");
     await supabaseClient.auth.signOut();
     navigate('/login');
-  }, [supabaseClient, navigate]);
+  }, [navigate, supabaseClient]);
 
-  // ... onTestComplete 和 handleProfileUpdate 保持不變 ...
   const onTestComplete = useCallback(async () => {
     if (!session) return;
     try {
@@ -129,32 +123,44 @@ function App() {
     </div>
   );
 
-  const TestLayout = ({ children }) => (
-    <div className="app-container">
-      <Header activePage="InitialTest" onNavigate={navigate} onLogout={handleLogout} hasCompletedTest={hasCompletedTest} />
-      <ClickSpark>{children}</ClickSpark>
-      <MiniProfile userData={userData} />
-      <LanguageSelector />
-    </div>
-  );
+  // 等待條件：如果 session 還在初始化（undefined），或 session 存在但 profile 還在載入，
+  // 都不要渲染 Routes，以免在未完全知道狀態前造成錯誤的導向。
+  if (session === undefined || (session && isLoadingProfile)) {
+    return <div style={{padding:20}}>Loading authentication/profile...</div>;
+  }
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/" /> : <ClickSpark><Login /></ClickSpark>} />
+      {/* /login 現在會在登入後導回原始想去的路徑（若有） */}
+      <Route 
+        path="/login" 
+        element={session ? <Navigate to={location.state?.from || "/"} replace /> : <ClickSpark><Login /></ClickSpark>} 
+      />
+      
+      {/* 根路由 - 僅在直接訪問 "/" 時顯示 Introduction */}
       <Route 
         path="/" 
         element={
           <PrivateRoute>
-            {isLoadingProfile ? (
-              <div>Loading user profile...</div>
-            ) : (
-              userData && (hasCompletedTest ? <Navigate to="/introduction" /> : <Navigate to="/initial-test" />)
-            )}
+            <MainLayout>
+              <Introduction />
+            </MainLayout>
           </PrivateRoute>
         } 
       />
-      {/* ... 其他路由保持不變 ... */}
-      <Route path="/introduction" element={<PrivateRoute><MainLayout><Introduction /></MainLayout></PrivateRoute>} />
+
+      {/* 其他路由保持 URL，僅在必要情況下（未完成初測）導向 initial-test，並且附帶 returnTo */}
+      <Route 
+        path="/introduction" 
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Introduction />
+            </MainLayout>
+          </PrivateRoute>
+        } 
+      />
+
       <Route 
         path="/profile" 
         element={
@@ -165,19 +171,53 @@ function App() {
           </PrivateRoute>
         } 
       />
-      <Route path="/practice" element={<PrivateRoute>{hasCompletedTest ? <MainLayout><Practice /></MainLayout> : <Navigate to="/initial-test" />}</PrivateRoute>} />
-      <Route path="/records" element={<PrivateRoute>{hasCompletedTest ? <MainLayout><Records /></MainLayout> : <Navigate to="/initial-test" />}</PrivateRoute>} />
+
+      <Route 
+        path="/practice" 
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              {!hasCompletedTest ? (
+                <Navigate to="/initial-test" state={{ returnTo: '/practice' }} replace />
+              ) : (
+                <Practice />
+              )}
+            </MainLayout>
+          </PrivateRoute>
+        } 
+      />
+
+      <Route 
+        path="/records" 
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              {!hasCompletedTest ? (
+                <Navigate to="/initial-test" state={{ returnTo: '/records' }} replace />
+              ) : (
+                <Records />
+              )}
+            </MainLayout>
+          </PrivateRoute>
+        } 
+      />
+      
       <Route 
         path="/initial-test" 
         element={
           <PrivateRoute>
-            {hasCompletedTest 
-              ? <Navigate to="/introduction" /> 
-              : <TestLayout><InitialTest onTestComplete={onTestComplete} /></TestLayout>
-            }
+            <MainLayout>
+              {hasCompletedTest ? (
+                // 若來到這裡但已完成測驗，回到先前想去的頁面（若有），否則到 introduction
+                <Navigate to={location.state?.returnTo || "/introduction"} replace />
+              ) : (
+                <InitialTest onTestComplete={onTestComplete} />
+              )}
+            </MainLayout>
           </PrivateRoute>
         } 
       />
+      
       <Route path="*" element={<p>Page Not Found</p>} />
     </Routes>
   );
@@ -192,3 +232,4 @@ export default function AppWrapper() {
     </BrowserRouter>
   );
 }
+
