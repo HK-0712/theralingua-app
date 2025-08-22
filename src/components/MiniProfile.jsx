@@ -18,11 +18,13 @@ const MiniProfile = ({ userData }) => {
   };
 
   // --- ✨ 核心修正: 直接從 userData 解構出頂層屬性 ✨ ---
-  const { id, email, username, settings } = userData;
+  const { id, email, username, settings, user_settings } = userData;
   
-  // 從 settings 中安全地獲取語言和等級
-  const practiceLanguage = settings ? settings.language : 'en';
-  const difficultyLevel = settings ? settings.cur_lvl : 'N/A';
+  // 從 settings 或 user_settings 中安全地獲取語言和等級
+  // 這使得元件對來自 App.jsx (user_settings) 或 Profile.jsx (settings) 的資料結構都有彈性
+  const effectiveSettings = settings || user_settings;
+  const practiceLanguage = effectiveSettings ? effectiveSettings.language : 'en';
+  const difficultyLevel = effectiveSettings ? effectiveSettings.cur_lvl : 'N/A';
 
   return (
     <div 

@@ -129,6 +129,24 @@ export default function Profile({ setUserData }) {
       }
 
       setMessage({ text: 'Profile updated successfully!', type: 'success' });
+
+      // ✨ 核心修正：手動更新 App.jsx 的 userData 狀態 ✨
+      const updatedProfileData = {
+        ...profileData,
+        username: formData.username,
+        settings: {
+          ...profileData.settings,
+          language: formData.practice_language,
+        },
+      };
+      
+      // 1. 更新 Profile.jsx 自己的狀態
+      setProfileData(updatedProfileData);
+      
+      // 2. 更新 App.jsx 的狀態，觸發 MiniProfile 刷新
+      if (setUserData) {
+        setUserData(updatedProfileData);
+      }
       
       // 為了立即看到效果，清空密碼欄位
       setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
