@@ -1,7 +1,8 @@
-// src/App.jsx (The final, fully-featured, and absolutely correct version)
-
-import React, { useState, useEffect } from 'react';
+// src/App.jsx (Final Corrected Version)
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useSession, useSupabaseClient, SessionContextProvider } from '@supabase/auth-helpers-react';
+import { supabase } from './supabaseClient';
 
 import Login from './pages/Login';
 import Introduction from './pages/Introduction';
@@ -16,118 +17,110 @@ import MiniProfile from './components/MiniProfile';
 import './styles/App.css';
 
 const PrivateRoute = ({ children }) => {
-  const isAuthenticated = !!localStorage.getItem('accessToken');
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
-};
+  const session = useSession();
+  const isLoading = session === undefined;
 
-const MainAppRoute = ({ children, hasCompletedTest }) => {
-  return hasCompletedTest ? children : <Navigate to="/initial-test" replace />;
+  if (isLoading) {
+    return <div>Loading authentication status...</div>;
+  }
+
+  return session ? children : <Navigate to="/login" replace />;
 };
 
 function App() {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('accessToken'));
-  const [practiceLanguage] = useState(() => localStorage.getItem('practiceLanguage') || 'en');
+  const session = useSession();
+  const supabaseClient = useSupabaseClient();
+
   const [userData, setUserData] = useState(null);
   const [hasCompletedTest, setHasCompletedTest] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchInitialData = async () => {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        setIsAuthenticated(true);
+    const fetchUserData = async () => {
+      if (session) {
+        setIsLoading(true);
         try {
-          const response = await fetch('http://127.0.0.1:8000/api/profile/', {
-            headers: { 'Authorization': `Bearer ${token}` },
-          } );
-          if (response.ok) {
-            const data = await response.json();
-            setUserData(data);
-            setHasCompletedTest(data.is_initial_test_completed);
-            if (data.is_initial_test_completed) {
-              localStorage.setItem('hasCompletedInitialTest', 'true');
-            }
-          } else {
-            handleLogout();
-          }
+          const { data, error } = await supabaseClient
+            .from('profiles')
+            .select('*, user_settings(*)')
+            .eq('id', session.user.id)
+            .single();
+
+          if (error) throw error;
+
+          const finalUserData = { ...data, email: session.user.email };
+          setUserData(finalUserData);
+          setHasCompletedTest(!!data.user_settings?.sug_lvl);
+
         } catch (error) {
-          console.error("Failed to fetch user data:", error);
+          console.error("Error fetching user data:", error);
           handleLogout();
+        } finally {
+          setIsLoading(false);
         }
       } else {
-        setIsAuthenticated(false);
+        setUserData(null);
+        setHasCompletedTest(false);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
-    fetchInitialData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
 
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-  };
+    fetchUserData();
+  }, [session, supabaseClient]);
 
-  const handleLogout = () => {
-    localStorage.clear();
-    setIsAuthenticated(false);
-    setUserData(null);
-    setHasCompletedTest(false);
+  const handleLogout = useCallback(async () => {
+    await supabaseClient.auth.signOut();
     navigate('/login');
+  }, [navigate, supabaseClient]);
+
+  const onTestComplete = async () => {
+    if (!session) return;
+    try {
+        const { error } = await supabaseClient
+            .from('user_settings')
+            .update({ sug_lvl: 'Primary-School' })
+            .eq('user_id', session.user.id);
+        if (error) throw error;
+        setHasCompletedTest(true);
+        navigate('/introduction');
+    } catch(error) {
+        console.error("Failed to mark test as complete:", error);
+    }
   };
 
-  const onTestComplete = () => {
-    setHasCompletedTest(true);
-    localStorage.setItem('hasCompletedInitialTest', 'true');
-    navigate('/introduction');
-  };
+  const MainLayout = ({ children }) => (
+    <div className="app-container">
+      <Header activePage={window.location.pathname.split('/')[1] || 'introduction'} onNavigate={navigate} onLogout={handleLogout} hasCompletedTest={hasCompletedTest} />
+      <ClickSpark>{children}</ClickSpark>
+      <MiniProfile userData={userData} />
+      <LanguageSelector />
+    </div>
+  );
 
-  const MainLayout = ({ children }) => {
-    const getActivePage = (pathname) => {
-      if (pathname.startsWith('/introduction')) return 'Introduction';
-      if (pathname.startsWith('/practice')) return 'Practice';
-      if (pathname.startsWith('/records')) return 'Records';
-      if (pathname.startsWith('/profile')) return 'Profile';
-      return '';
-    };
-    return (
-      <div className="app-container">
-        <Header activePage={getActivePage(window.location.pathname)} onNavigate={navigate} onLogout={handleLogout} hasCompletedTest={hasCompletedTest} />
-        <ClickSpark>{children}</ClickSpark>
-        <MiniProfile userData={userData} />
-        <LanguageSelector />
-      </div>
-    );
-  };
+  const TestLayout = ({ children }) => (
+    <div className="app-container">
+      <Header activePage="InitialTest" onNavigate={navigate} onLogout={handleLogout} hasCompletedTest={hasCompletedTest} />
+      <ClickSpark>{children}</ClickSpark>
+      <MiniProfile userData={userData} />
+      <LanguageSelector />
+    </div>
+  );
 
-  // --- ✨ 核心修正: 將 ClickSpark 和 LanguageSelector 添加回來 ✨ ---
-  const TestLayout = ({ children }) => {
-    return (
-      <div className="app-container">
-        <Header activePage="InitialTest" onNavigate={navigate} onLogout={handleLogout} hasCompletedTest={hasCompletedTest} />
-        {/* 1. 用 ClickSpark 包裹 children，恢復點擊特效 */}
-        <ClickSpark>{children}</ClickSpark>
-        <MiniProfile userData={userData} />
-        {/* 2. 重新添加 LanguageSelector 元件 */}
-        <LanguageSelector />
-      </div>
-    );
-  };
-
-  if (isLoading && isAuthenticated) {
-    return <div>Loading...</div>;
+  if (isLoading && session) {
+    return <div>Loading user profile...</div>;
   }
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <ClickSpark><Login onLoginSuccess={handleLoginSuccess} /></ClickSpark>} />
+      {/* 核心修正：將 onLoginSuccess={() => navigate('/')} 傳遞給 Login 組件 */}
+      <Route path="/login" element={session ? <Navigate to="/" /> : <ClickSpark><Login onLoginSuccess={() => navigate('/')} /></ClickSpark>} />
+      
       <Route path="/" element={<PrivateRoute>{hasCompletedTest ? <Navigate to="/introduction" /> : <Navigate to="/initial-test" />}</PrivateRoute>} />
-      
       <Route path="/introduction" element={<PrivateRoute><MainLayout><Introduction /></MainLayout></PrivateRoute>} />
-      <Route path="/profile" element={<PrivateRoute><MainLayout><Profile setUserData={setUserData} /></MainLayout></PrivateRoute>} />
-      <Route path="/practice" element={<PrivateRoute><MainAppRoute hasCompletedTest={hasCompletedTest}><MainLayout><Practice practiceLanguage={practiceLanguage} /></MainLayout></MainAppRoute></PrivateRoute>} />
-      <Route path="/records" element={<PrivateRoute><MainAppRoute hasCompletedTest={hasCompletedTest}><MainLayout><Records practiceLanguage={practiceLanguage} /></MainLayout></MainAppRoute></PrivateRoute>} />
-      
+      <Route path="/profile" element={<PrivateRoute><MainLayout><Profile key={session?.user.id} /></MainLayout></PrivateRoute>} />
+      <Route path="/practice" element={<PrivateRoute>{hasCompletedTest ? <MainLayout><Practice /></MainLayout> : <Navigate to="/initial-test" />}</PrivateRoute>} />
+      <Route path="/records" element={<PrivateRoute>{hasCompletedTest ? <MainLayout><Records /></MainLayout> : <Navigate to="/initial-test" />}</PrivateRoute>} />
       <Route 
         path="/initial-test" 
         element={
@@ -139,7 +132,6 @@ function App() {
           </PrivateRoute>
         } 
       />
-      
       <Route path="*" element={<p>Page Not Found</p>} />
     </Routes>
   );
@@ -148,7 +140,9 @@ function App() {
 export default function AppWrapper() {
   return (
     <BrowserRouter>
-      <App />
+      <SessionContextProvider supabaseClient={supabase}>
+        <App />
+      </SessionContextProvider>
     </BrowserRouter>
   );
 }

@@ -1,4 +1,4 @@
-// src/pages/Profile.jsx (The final, fully restored & functional version)
+// src/pages/Profile.jsx (Cloud-Connected Version)
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,8 @@ import { formatInTimeZone } from 'date-fns-tz';
 import '../styles/Profile.css';
 import Loader from '../components/Loader';
 import Message from '../components/Message';
+// ✨ 1. 導入我們的「武器」：Supabase 客戶端
+import { supabase } from '../supabaseClient';
 
 export default function Profile({ setUserData }) {
   const { t } = useTranslation();
@@ -20,103 +22,116 @@ export default function Profile({ setUserData }) {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState({ text: '', type: '' });
 
+  // ✨ 2. 改造 useEffect，實現真正的「雲端數據讀取」
   useEffect(() => {
     const fetchProfile = async () => {
       setIsLoading(true);
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        setMessage({ text: 'Authentication error. Please log in again.', type: 'error' });
-        setIsLoading(false);
-        return;
-      }
+      setMessage({ text: '', type: '' });
+
       try {
-        const response = await fetch('http://127.0.0.1:8000/api/profile/', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        } );
-        if (!response.ok) throw new Error('Failed to fetch profile data.');
-        
-        const data = await response.json();
-        setProfileData(data);
-        
-        // ✨ 核心修正 1: 使用後端返回的資料，正確初始化整個表單
+        // 2.1. 獲取當前登入的用戶
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error("User not found. Please log in again.");
+
+        // 2.2. 使用用戶 ID，從 `profiles` 和 `user_settings` 表中查詢數據
+        // Supabase 的 RLS (Row Level Security) 會確保用戶只能讀取自己的數據
+        const { data, error } = await supabase
+          .from('profiles')
+          .select(`
+            id,
+            username,
+            user_settings (
+              language,
+              cur_lvl
+            )
+          `)
+          .eq('id', user.id)
+          .single(); // .single() 會直接返回一個對象，而不是數組
+
+        if (error) throw error;
+
+        // 2.3. 將從雲端獲取的真實數據，填充到我們的狀態中
+        const fullProfileData = {
+          id: user.id,
+          email: user.email,
+          date_joined: user.created_at,
+          username: data.username,
+          settings: {
+            language: data.user_settings.language,
+            cur_lvl: data.user_settings.cur_lvl,
+          }
+        };
+
+        setProfileData(fullProfileData);
         setFormData({
-          username: data.username || '',
+          username: fullProfileData.username || '',
           password: '',
           confirmPassword: '',
-          // 從 data.settings 中讀取語言，如果不存在則預設為 'en'
-          practice_language: data.settings?.language || 'en',
+          practice_language: fullProfileData.settings.language,
         });
+        
+        // 將用戶數據傳遞給 App.jsx，以便在 MiniProfile 中顯示
+        if (setUserData) {
+          setUserData(fullProfileData);
+        }
 
       } catch (error) {
-        setMessage({ text: error.message, type: 'error' });
+        setMessage({ text: `Error: ${error.message}`, type: 'error' });
       } finally {
         setIsLoading(false);
       }
     };
+
     fetchProfile();
-  }, []);
+  }, [setUserData]); // 依賴 setUserData 保持穩定
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prevData => ({ ...prevData, [name]: value }));
   };
 
+  // ✨ 3. 改造 handleUpdate，實現真正的「雲端數據寫入」
   const handleUpdate = async () => {
     setMessage({ text: '', type: '' });
-
-    if (formData.password && formData.password !== formData.confirmPassword) {
-      setMessage({ text: 'New passwords do not match.', type: 'error' });
-      return;
-    }
-
-    // ✨ 核心修正 2: 判斷是否有任何變更
-    const isUsernameChanged = profileData && formData.username !== profileData.username;
-    const isPasswordChanged = formData.password.length > 0;
-    const isLanguageChanged = profileData && formData.practice_language !== profileData.settings?.language;
-
-    if (!isUsernameChanged && !isPasswordChanged && !isLanguageChanged) {
-      setMessage({ text: 'No changes detected to update.', type: 'info' });
-      return;
-    }
-
     setIsLoading(true);
-    const token = localStorage.getItem('accessToken');
-
-    // ✨ 核心修正 3: 構建包含所有可能變更的請求體
-    const requestBody = {};
-    if (isUsernameChanged) { requestBody.username = formData.username; }
-    if (isPasswordChanged) {
-      requestBody.password = formData.password;
-      requestBody.confirm_password = formData.confirmPassword;
-    }
-    if (isLanguageChanged) { requestBody.practice_language = formData.practice_language; }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/profile/', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(requestBody ),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        const friendlyError = data.password?.[0] || data.username?.[0] || JSON.stringify(data);
-        throw new Error(friendlyError);
+      // 3.1. 密碼檢查邏輯保持不變
+      if (formData.password && formData.password !== formData.confirmPassword) {
+        throw new Error("New passwords do not match.");
       }
 
-      // 更新成功後，用後端返回的最新資料更新所有相關狀態
-      setProfileData(data);
-      setUserData(data); // 更新 App.js 中的全域狀態
-      setFormData({
-        username: data.username,
-        password: '',
-        confirmPassword: '',
-        practice_language: data.settings?.language || 'en',
-      });
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("User not found. Please log in again.");
+
+      // 3.2. 更新 `profiles` 表中的 `username`
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ username: formData.username })
+        .eq('id', user.id);
+      if (profileError) throw profileError;
+
+      // 3.3. 更新 `user_settings` 表中的 `language`
+      const { error: settingsError } = await supabase
+        .from('user_settings')
+        .update({ language: formData.practice_language })
+        .eq('user_id', user.id);
+      if (settingsError) throw settingsError;
+
+      // 3.4. 如果用戶輸入了新密碼，則更新密碼
+      if (formData.password) {
+        const { error: passwordError } = await supabase.auth.updateUser({
+          password: formData.password
+        });
+        if (passwordError) throw passwordError;
+      }
+
       setMessage({ text: 'Profile updated successfully!', type: 'success' });
+      
+      // 為了立即看到效果，清空密碼欄位
+      setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
 
     } catch (error) {
       setMessage({ text: `Update failed: ${error.message}`, type: 'error' });
@@ -130,6 +145,7 @@ export default function Profile({ setUserData }) {
     return formatInTimeZone(utcDateString, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss');
   };
 
+  // --- JSX (畫面渲染) 部分保持不變 ---
   if (isLoading && !profileData) {
     return <main className="profile-page-container"><h1 className="page-title">{t('profilePage.title')}</h1><Loader /></main>;
   }
@@ -145,12 +161,9 @@ export default function Profile({ setUserData }) {
         <div className="input-group"><label htmlFor="user-id">{t('profilePage.userId')}</label><input type="text" id="user-id" value={profileData.id} disabled /></div>
         <div className="input-group"><label htmlFor="created-time">{t('profilePage.accountCreated')}</label><input type="text" id="created-time" value={formatHongKongTime(profileData.date_joined)} disabled /></div>
         <div className="input-group"><label htmlFor="email">{t('profilePage.emailAddress')}</label><input type="email" id="email" value={profileData.email} disabled /></div>
-        
         <div className="input-group"><label htmlFor="user-name">{t('profilePage.userName')}</label><input type="text" id="user-name" name="username" value={formData.username} onChange={handleInputChange} placeholder="Please set your username" /></div>
         <div className="input-group"><label htmlFor="password">{t('profilePage.newPassword')}</label><input type="password" id="password" name="password" placeholder="Leave blank to keep current" value={formData.password} onChange={handleInputChange} /></div>
         <div className="input-group"><label htmlFor="confirm-password">{t('profilePage.confirmPassword')}</label><input type="password" id="confirm-password" name="confirmPassword" placeholder="Confirm new password" value={formData.confirmPassword} onChange={handleInputChange} /></div>
-        
-        {/* ✨ 核心修正 4: 恢復語言下拉選單，並將其與 formData.practice_language 綁定 */}
         <div className="input-group">
           <label htmlFor="practice-language">{t('profilePage.practiceLanguage', 'Practice Language')}</label>
           <select id="practice-language" name="practice_language" className="input-group-select" value={formData.practice_language} onChange={handleInputChange}>
@@ -158,7 +171,6 @@ export default function Profile({ setUserData }) {
             <option value="zh">中文</option>
           </select>
         </div>
-        
         <div className="form-actions">
           <button type="button" id="update-button" className="update-btn" disabled={isLoading} onClick={handleUpdate}>
             {isLoading ? <Loader /> : <span>{t('profilePage.updateButton')}</span>}
