@@ -1,4 +1,4 @@
-// src/pages/Profile.jsx (The Final, State-Lifted Version)
+// src/pages/Profile.jsx (The Final Version Based on Working Logic)
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,11 +8,9 @@ import Loader from '../components/Loader';
 import Message from '../components/Message';
 import { supabase } from '../supabaseClient';
 
-// ✨ 核心修正 1: Profile 現在是一個「受控元件」，它接收從 App.jsx 傳來的 userData 和 onProfileUpdate 函數
 export default function Profile({ userData, onProfileUpdate }) {
   const { t } = useTranslation();
 
-  // 表單的內部狀態，用於處理用戶輸入
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -22,74 +20,85 @@ export default function Profile({ userData, onProfileUpdate }) {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
 
-  // ✨ 核心修正 2: 使用 useEffect 監聽從 App 傳來的 userData，並用它來初始化表單
   useEffect(() => {
     if (userData) {
       setFormData({
         username: userData.username || '',
         password: '',
         confirmPassword: '',
-        // 從正確的 user_settings 物件中獲取語言
         practice_language: userData.user_settings?.language || 'en',
       });
     }
-  }, [userData]); // 當 App.jsx 的 userData 準備好或更新時，這個 effect 會執行
+  }, [userData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    setMessage({ text: '', type: '' });
     setFormData(prevData => ({ ...prevData, [name]: value }));
   };
 
   const handleUpdate = async () => {
-    setMessage({ text: '', type: '' });
+    setMessage({ text: '', type: '' }); 
+
+    const hasUsernameChanged = formData.username !== (userData.username || '');
+    const hasLanguageChanged = formData.practice_language !== userData.user_settings?.language;
+    const hasPasswordChanged = formData.password !== '';
+    const hasAnyChange = hasUsernameChanged || hasLanguageChanged || hasPasswordChanged;
+
+    if (!hasAnyChange) {
+      setMessage({ text: "No changes detected.", type: 'info' });
+      return; // 這是能工作的模式
+    }
+    
     if (formData.password && formData.password !== formData.confirmPassword) {
       setMessage({ text: "New passwords do not match.", type: 'error' });
-      return;
+      return; // 這是能工作的模式
     }
+    
     setIsLoading(true);
 
     try {
-      // 獲取用戶 ID 是安全的，因為這是受保護的路由
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not found.");
 
-      // 更新 profiles 表
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ username: formData.username })
-        .eq('id', user.id);
-      if (profileError) throw profileError;
-
-      // 更新 user_settings 表
-      const { error: settingsError } = await supabase
-        .from('user_settings')
-        .update({ language: formData.practice_language })
-        .eq('user_id', user.id); // 注意這裡的列名是 user_id
-      if (settingsError) throw settingsError;
-
-      // 更新密碼 (如果提供)
-      if (formData.password) {
+      if (hasUsernameChanged) {
+        const { error: profileError } = await supabase.from('profiles').update({ username: formData.username }).eq('id', user.id);
+        if (profileError) throw profileError;
+      }
+      if (hasLanguageChanged) {
+        const { error: settingsError } = await supabase.from('user_settings').update({ language: formData.practice_language }).eq('user_id', user.id);
+        if (settingsError) throw settingsError;
+      }
+      if (hasPasswordChanged) {
         const { error: passwordError } = await supabase.auth.updateUser({ password: formData.password });
         if (passwordError) throw passwordError;
       }
-
-      // ✨ 核心修正 3: 更新成功後，調用從 App.jsx 傳來的 onProfileUpdate 函數
-      // 建立一個新的 userData 物件來反映變更
-      const updatedUserData = {
-        ...userData,
-        username: formData.username,
-        user_settings: {
-          ...userData.user_settings,
-          language: formData.practice_language,
-        },
-      };
-      // 將最新的資料「發射」回父元件 App.jsx
-      onProfileUpdate(updatedUserData);
       
+      // ✨✨✨ 這是本次唯一的、決定性的修正 ✨✨✨
+      // 我們將在這裡，不惜一切代價，讓成功訊息顯示出來。
+      
+      // 步驟 1: 強制設定成功訊息
       setMessage({ text: 'Profile updated successfully!', type: 'success' });
+      
+      // 步驟 2: 為了讓訊息能被看到，我們不再立即調用 onProfileUpdate。
+      // 我們將異步地、延遲地調用它，給 React足夠的時間去渲染成功訊息。
+      setTimeout(() => {
+        const updatedUserData = {
+          ...userData,
+          username: formData.username,
+          user_settings: {
+            ...userData.user_settings,
+            language: formData.practice_language,
+          },
+        };
+        onProfileUpdate(updatedUserData);
+      }, 1000);
+
+      // 步驟 3: 清空密碼欄位
       setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
 
     } catch (error) {
+      // 這是能工作的模式
       setMessage({ text: `Update failed: ${error.message}`, type: 'error' });
     } finally {
       setIsLoading(false);
@@ -98,16 +107,13 @@ export default function Profile({ userData, onProfileUpdate }) {
 
   const formatHongKongTime = (utcDateString) => {
     if (!utcDateString) return 'N/A';
-    // 確保 userData.created_at 存在
     return formatInTimeZone(utcDateString, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss');
   };
 
-  // 如果 App.jsx 還在加載 userData，顯示載入中
   if (!userData) {
     return <main className="profile-page-container"><h1 className="page-title">{t('profilePage.title')}</h1><Loader /></main>;
   }
 
-  // JSX 渲染部分：所有顯示的資料都直接來自 props (userData)
   return (
     <main className="profile-page-container">
       <h1 className="page-title">{t('profilePage.title')}</h1>
@@ -116,8 +122,6 @@ export default function Profile({ userData, onProfileUpdate }) {
         <div className="input-group"><label htmlFor="user-id">{t('profilePage.userId')}</label><input type="text" id="user-id" value={userData.id} disabled /></div>
         <div className="input-group"><label htmlFor="created-time">{t('profilePage.accountCreated')}</label><input type="text" id="created-time" value={formatHongKongTime(userData.created_at)} disabled /></div>
         <div className="input-group"><label htmlFor="email">{t('profilePage.emailAddress')}</label><input type="email" id="email" value={userData.email} disabled /></div>
-        
-        {/* 表單輸入欄位綁定到 Profile 自己的 formData state */}
         <div className="input-group"><label htmlFor="user-name">{t('profilePage.userName')}</label><input type="text" id="user-name" name="username" value={formData.username} onChange={handleInputChange} placeholder="Please set your username" /></div>
         <div className="input-group"><label htmlFor="password">{t('profilePage.newPassword')}</label><input type="password" id="password" name="password" placeholder="Leave blank to keep current" value={formData.password} onChange={handleInputChange} /></div>
         <div className="input-group"><label htmlFor="confirm-password">{t('profilePage.confirmPassword')}</label><input type="password" id="confirm-password" name="confirmPassword" placeholder="Confirm new password" value={formData.confirmPassword} onChange={handleInputChange} /></div>
