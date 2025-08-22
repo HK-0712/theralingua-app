@@ -1,4 +1,5 @@
-// src/pages/Login.jsx (Final Corrected Version)
+// src/pages/Login.jsx (The Final, Purest Version)
+
 import React, { useState } from 'react';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import Silk from '../components/Silk';
@@ -7,7 +8,8 @@ import '../styles/Login.css';
 
 const Loader = () => <div className="loader"></div>;
 
-export default function Login({ onLoginSuccess }) { // 核心修正1：確保接收 onLoginSuccess
+// ✨ 核心修正: 移除 onLoginSuccess prop，讓這個元件只專注於認證
+export default function Login() { 
   const supabase = useSupabaseClient();
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [message, setMessage] = useState({ text: '', type: '' });
@@ -34,12 +36,14 @@ export default function Login({ onLoginSuccess }) { // 核心修正1：確保接
 
     try {
       if (isLoginMode) {
+        // ✨ 核心修正: 登入成功後，不再調用任何回調。
+        // SessionContextProvider 會自動檢測到 session 變化，並通知 App.jsx
         const { error } = await supabase.auth.signInWithPassword({
           email: email,
           password: password,
         });
         if (error) throw error;
-        if (onLoginSuccess) onLoginSuccess(); // 核心修正2：登入成功後，調用它
+        // 這裡不需要做任何事！
       } else {
         const { data, error } = await supabase.auth.signUp({
           email: email,
@@ -56,6 +60,7 @@ export default function Login({ onLoginSuccess }) { // 核心修正1：確保接
     }
   };
 
+  // JSX 保持不變
   return (
     <div className="login-page-wrapper">
       <div className="background-layer"><Silk /></div>
