@@ -26,7 +26,7 @@ root.render(
     <QueryClientProvider client={queryClient}>
       <App />
       {/* 在開發環境中顯示 React Query 開發工具 */}
-      <ReactQueryDevtools initialIsOpen={false} />
+      {/* <ReactQueryDevtools initialIsOpen={false} /> */}
     </QueryClientProvider>
   </React.StrictMode>
 );

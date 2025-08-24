@@ -1,11 +1,11 @@
 // src/pages/InitialTest.jsx (React Query Refactored Version)
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react'; // 移除了 useCallback
 import { useSession } from '@supabase/auth-helpers-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query'; // 移除了 useQuery
 import { useTranslation } from 'react-i18next';
 
-import { getInitialTestStatus, postInitialTestResult, markTestAsCompleted } from '../api/supabaseAPI';
+import { postInitialTestResult, markTestAsCompleted } from '../api/supabaseAPI'; // 移除了 getInitialTestStatus
 import ConfirmDialog from '../components/ConfirmDialog';
 import wordData from '../data/initial-test-words.json';
 import '../styles/Practice.css';
@@ -46,13 +46,12 @@ const DiagnosisOutput = ({ result }) => {
 export default function InitialTest({ onTestComplete }) {
   const { t } = useTranslation();
   const session = useSession();
-  const queryClient = useQueryClient();
   const userId = session?.user?.id;
 
   // --- 本地 UI 狀態 (Local UI State) ---
   // 這些狀態只與當前頁面的交互有關，保留使用 useState
   const [progressCount, setProgressCount] = useState(0); // 純前端管理的進度計數
-  const [totalCount, setTotalCount] = useState(20); // 測試總數
+  const [totalCount] = useState(20); // <-- 只保留 totalCount
   const [currentWord, setCurrentWord] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [diagnosisResult, setDiagnosisResult] = useState(null);
