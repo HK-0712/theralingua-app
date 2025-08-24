@@ -1,18 +1,17 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import App from './App';
 import './index.css';
 import './i18n';
+import { AuthLoader } from './components/AuthLoader'; // ✨ 1. 導入新元件
 
-// 創建一個 QueryClient 實例
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 分鐘內數據視為新鮮，不會重新獲取
-      refetchOnWindowFocus: false, // 禁用窗口聚焦時自動重新獲取
-      retry: 1, // 失敗後重試 1 次
+      staleTime: 1000 * 60 * 5,
+      refetchOnWindowFocus: false,
+      retry: 1,
     },
   },
 });
@@ -22,11 +21,11 @@ const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    {/* 使用 QueryClientProvider 包裹 App */}
     <QueryClientProvider client={queryClient}>
-      <App />
-      {/* 在開發環境中顯示 React Query 開發工具 */}
-      {/* <ReactQueryDevtools initialIsOpen={false} /> */}
+      {/* ✨ 2. 用 AuthLoader 包裹 App ✨ */}
+      <AuthLoader>
+        <App />
+      </AuthLoader>
     </QueryClientProvider>
   </React.StrictMode>
 );
