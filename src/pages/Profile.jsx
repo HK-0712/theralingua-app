@@ -1,15 +1,90 @@
-// src/pages/Profile.jsx (The Final Version Based on Working Logic)
+// src/pages/Profile.jsx (React Query Refactored Version)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSession, useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { formatInTimeZone } from 'date-fns-tz';
-import '../styles/Profile.css';
+
+import { updateUserProfile, updateUserSettings, getUserData } from '../api/supabaseAPI';
 import Loader from '../components/Loader';
 import Message from '../components/Message';
-import { supabase } from '../supabaseClient';
+import '../styles/Profile.css';
 
-export default function Profile({ userData, onProfileUpdate }) {
+// =================================================================
+// ==   自定義 Hooks (Custom Hooks)                               ==
+// =================================================================
+
+/**
+ * 處理用戶資料更新的 Hook。
+ * 封裝了所有與更新相關的 useMutation 邏輯。
+ */
+const useUpdateUser = () => {
+  const queryClient = useQueryClient();
+  const supabaseClient = useSupabaseClient();
+  const session = useSession();
+  const userId = session?.user?.id;
+
+  return useMutation({
+    // 1. mutationFn: 這是執行的核心異步函數。
+    //    它接收一個包含所有表單數據的變量。
+    mutationFn: async ({ formData, initialData }) => {
+      const promises = [];
+
+      // 檢查各項是否有變更，只有變更了才發起請求
+      if (formData.username !== initialData.username) {
+        promises.push(updateUserProfile(userId, { username: formData.username }));
+      }
+      if (formData.practice_language !== initialData.settings.language) {
+        promises.push(updateUserSettings(userId, { language: formData.practice_language }));
+      }
+      if (formData.password) {
+        promises.push(supabaseClient.auth.updateUser({ password: formData.password }));
+      }
+
+      if (promises.length === 0) {
+        // 如果沒有任何變更，可以拋出一個特定錯誤或返回一個標識
+        throw new Error("No changes detected.");
+      }
+
+      // 並行執行所有更新操作
+      await Promise.all(promises);
+    },
+    // 2. onSuccess: mutation 成功後的回調。
+    //    這是實現瞬時更新的關鍵！
+    onSuccess: () => {
+      // 讓所有與 'user' 相關的查詢失效。
+      // React Query 會自動重新獲取這些查詢的最新數據。
+      // 這會觸發 App.jsx 中的 useUser hook 重新運行。
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+    // onError 和 onSettled 回調可以用於更精細的 UI 控制
+    onError: (error) => {
+      console.error("Update failed:", error);
+    },
+  });
+};
+
+
+// =================================================================
+// ==   Profile 組件                                              ==
+// =================================================================
+
+export default function Profile() {
   const { t } = useTranslation();
+  const session = useSession();
+  
+  // ✨ 核心變更 1: 直接從 React Query 緩存中獲取用戶數據
+  // 我們使用與 App.jsx 中相同的 queryKey，React Query 會立即返回緩存中的數據，無需重新發起網絡請求。
+  const { data: userData, isLoading: isLoadingUserData } = useQuery({
+    queryKey: ['user', session?.user?.id],
+    queryFn: () => getUserData(session?.user?.id),
+    enabled: !!session?.user?.id,
+    staleTime: Infinity, // Profile 頁面的數據依賴 App.jsx 的刷新，自身不需要過期
+  });
+
+  // ✨ 核心變更 2: 使用我們的自定義更新 Hook
+  const { mutate: updateUser, isPending: isUpdating, isSuccess, isError, error } = useUpdateUser();
 
   const [formData, setFormData] = useState({
     username: '',
@@ -17,100 +92,56 @@ export default function Profile({ userData, onProfileUpdate }) {
     confirmPassword: '',
     practice_language: 'en',
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState({ text: '', type: '' });
 
+  // 當從 React Query 獲取到 userData 後，用它來初始化表單
   useEffect(() => {
     if (userData) {
       setFormData({
         username: userData.username || '',
         password: '',
         confirmPassword: '',
-        practice_language: userData.user_settings?.language || 'en',
+        practice_language: userData.settings?.language || 'en',
       });
     }
   }, [userData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setMessage({ text: '', type: '' });
     setFormData(prevData => ({ ...prevData, [name]: value }));
   };
 
-  const handleUpdate = async () => {
-    setMessage({ text: '', type: '' }); 
-
-    const hasUsernameChanged = formData.username !== (userData.username || '');
-    const hasLanguageChanged = formData.practice_language !== userData.user_settings?.language;
-    const hasPasswordChanged = formData.password !== '';
-    const hasAnyChange = hasUsernameChanged || hasLanguageChanged || hasPasswordChanged;
-
-    if (!hasAnyChange) {
-      setMessage({ text: "No changes detected.", type: 'info' });
-      return; // 這是能工作的模式
-    }
-    
+  const handleUpdate = (e) => {
+    e.preventDefault();
     if (formData.password && formData.password !== formData.confirmPassword) {
-      setMessage({ text: "New passwords do not match.", type: 'error' });
-      return; // 這是能工作的模式
+      // 可以在這裡設置一個本地的錯誤消息 state
+      console.error("Passwords do not match.");
+      return;
     }
-    
-    setIsLoading(true);
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not found.");
-
-      if (hasUsernameChanged) {
-        const { error: profileError } = await supabase.from('profiles').update({ username: formData.username }).eq('id', user.id);
-        if (profileError) throw profileError;
-      }
-      if (hasLanguageChanged) {
-        const { error: settingsError } = await supabase.from('user_settings').update({ language: formData.practice_language }).eq('user_id', user.id);
-        if (settingsError) throw settingsError;
-      }
-      if (hasPasswordChanged) {
-        const { error: passwordError } = await supabase.auth.updateUser({ password: formData.password });
-        if (passwordError) throw passwordError;
-      }
-      
-      // ✨✨✨ 這是本次唯一的、決定性的修正 ✨✨✨
-      // 我們將在這裡，不惜一切代價，讓成功訊息顯示出來。
-      
-      // 步驟 1: 強制設定成功訊息
-      setMessage({ text: 'Profile updated successfully!', type: 'success' });
-      
-      // 步驟 2: 為了讓訊息能被看到，我們不再立即調用 onProfileUpdate。
-      // 我們將異步地、延遲地調用它，給 React足夠的時間去渲染成功訊息。
-      setTimeout(() => {
-        const updatedUserData = {
-          ...userData,
-          username: formData.username,
-          user_settings: {
-            ...userData.user_settings,
-            language: formData.practice_language,
-          },
-        };
-        onProfileUpdate(updatedUserData);
-      }, 1000);
-
-      // 步驟 3: 清空密碼欄位
-      setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
-
-    } catch (error) {
-      // 這是能工作的模式
-      setMessage({ text: `Update failed: ${error.message}`, type: 'error' });
-    } finally {
-      setIsLoading(false);
-    }
+    // 調用 mutate 函數，並傳入需要的變量
+    updateUser({ formData, initialData: userData });
   };
+
+  // 創建一個 memoized 消息，以響應 mutation 的狀態
+  const message = useMemo(() => {
+    if (isSuccess) {
+      return { text: 'Profile updated successfully!', type: 'success' };
+    }
+    if (isError) {
+      // 對 "No changes" 的情況做特殊處理
+      if (error.message === "No changes detected.") {
+        return { text: error.message, type: 'info' };
+      }
+      return { text: `Update failed: ${error.message}`, type: 'error' };
+    }
+    return { text: '', type: '' };
+  }, [isSuccess, isError, error]);
 
   const formatHongKongTime = (utcDateString) => {
     if (!utcDateString) return 'N/A';
     return formatInTimeZone(utcDateString, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss');
   };
 
-  if (!userData) {
+  if (isLoadingUserData) {
     return <main className="profile-page-container"><h1 className="page-title">{t('profilePage.title')}</h1><Loader /></main>;
   }
 
@@ -118,10 +149,10 @@ export default function Profile({ userData, onProfileUpdate }) {
     <main className="profile-page-container">
       <h1 className="page-title">{t('profilePage.title')}</h1>
       {message.text && <Message text={message.text} type={message.type} />}
-      <div id="profile-form" className="profile-form">
-        <div className="input-group"><label htmlFor="user-id">{t('profilePage.userId')}</label><input type="text" id="user-id" value={userData.id} disabled /></div>
-        <div className="input-group"><label htmlFor="created-time">{t('profilePage.accountCreated')}</label><input type="text" id="created-time" value={formatHongKongTime(userData.created_at)} disabled /></div>
-        <div className="input-group"><label htmlFor="email">{t('profilePage.emailAddress')}</label><input type="email" id="email" value={userData.email} disabled /></div>
+      <form id="profile-form" className="profile-form" onSubmit={handleUpdate}>
+        <div className="input-group"><label htmlFor="user-id">{t('profilePage.userId')}</label><input type="text" id="user-id" value={userData?.id || ''} disabled /></div>
+        <div className="input-group"><label htmlFor="created-time">{t('profilePage.accountCreated')}</label><input type="text" id="created-time" value={formatHongKongTime(session?.user?.created_at)} disabled /></div>
+        <div className="input-group"><label htmlFor="email">{t('profilePage.emailAddress')}</label><input type="email" id="email" value={session?.user?.email || ''} disabled /></div>
         <div className="input-group"><label htmlFor="user-name">{t('profilePage.userName')}</label><input type="text" id="user-name" name="username" value={formData.username} onChange={handleInputChange} placeholder="Please set your username" /></div>
         <div className="input-group"><label htmlFor="password">{t('profilePage.newPassword')}</label><input type="password" id="password" name="password" placeholder="Leave blank to keep current" value={formData.password} onChange={handleInputChange} /></div>
         <div className="input-group"><label htmlFor="confirm-password">{t('profilePage.confirmPassword')}</label><input type="password" id="confirm-password" name="confirmPassword" placeholder="Confirm new password" value={formData.confirmPassword} onChange={handleInputChange} /></div>
@@ -133,11 +164,11 @@ export default function Profile({ userData, onProfileUpdate }) {
           </select>
         </div>
         <div className="form-actions">
-          <button type="button" id="update-button" className="update-btn" disabled={isLoading} onClick={handleUpdate}>
-            {isLoading ? <Loader /> : <span>{t('profilePage.updateButton')}</span>}
+          <button type="submit" id="update-button" className="update-btn" disabled={isUpdating}>
+            {isUpdating ? <Loader /> : <span>{t('profilePage.updateButton')}</span>}
           </button>
         </div>
-      </div>
+      </form>
     </main>
   );
 }

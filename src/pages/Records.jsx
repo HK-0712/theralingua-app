@@ -1,105 +1,156 @@
-import React, { useState, useEffect, useMemo } from "react";
+// src/pages/Records.jsx (React Query Refactored Version)
+
+import React, { useState, useMemo } from "react";
+import { useSession } from '@supabase/auth-helpers-react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Chart from "react-apexcharts";
+import { format, parseISO, eachDayOfInterval, startOfWeek, endOfWeek, getDay } from 'date-fns';
+import { toDate } from 'date-fns-tz';
+
+import { getPracticeRecords } from '../api/supabaseAPI';
+import Loader from "../components/Loader";
 import "../styles/Records.css";
 import "../styles/Layout.css";
 
-const mockData = {
-  progressChart: {
-    dates: ["Aug 1", "Aug 2", "Aug 3", "Aug 4", "Aug 5", "Aug 6", "Aug 7"],
-    errorRates: [45, 42, 38, 35, 30, 25, 22],
-  },
-  phonemeChart: {
-    phonemes: ["/r/", "/s/", "/l/", "/th/", "/k/"],
-    errorCounts: [28, 21, 15, 10, 5],
-  },
-  heatmapChart: [
-    { name: "Jul 21 - 27", data: [{ x: "Mon", y: 1 }, { x: "Tue", y: 4 }, { x: "Wed", y: 2 }, { x: "Thu", y: 6 }, { x: "Fri", y: 3 }, { x: "Sat", y: 0 }, { x: "Sun", y: 0 }] },
-    { name: "Jul 28 - Aug 3", data: [{ x: "Mon", y: 6 }, { x: "Tue", y: 3 }, { x: "Wed", y: 1 }, { x: "Thu", y: 0 }, { x: "Fri", y: 5 }, { x: "Sat", y: 8 }, { x: "Sun", y: 4 }] },
-    { name: "Aug 4 - 10", data: [{ x: "Mon", y: 2 }, { x: "Tue", y: 0 }, { x: "Wed", y: 7 }, { x: "Thu", y: 4 }, { x: "Fri", y: 9 }, { x: "Sat", y: 5 }, { x: "Sun", y: 1 }] },
-    { name: "Aug 11 - 17", data: [{ x: "Mon", y: 5 }, { x: "Tue", y: 8 }, { x: "Wed", y: 3 }, { x: "Thu", y: 10 }, { x: "Fri", y: 2 }, { x: "Sat", y: 12 }, { x: "Sun", y: 0 }] },
-  ],
-  difficultyChart: {
-    levels: ["Kindergarten", "Primary School", "Middle School", "Adult"],
-    counts: [25, 45, 15, 5],
-  },
-  detailedRecords: [
-    {
-      id: 1,
-      date: "2025-08-12",
-      word: "window",
-      difficulty: "Primary",
-      errorRate: "40.00%",
-      errors: "['n', 'd']",
-      details: "【Diagnosis Layer】\n  - Target: 'window' (/ˈwɪndoʊ/)\n  - User: /ˈwɪmoʊ/\n\n  【Phoneme Alignment】\n  Target: [ w  ɪ  n  d  oʊ ]\n  User  : [ w  ɪ  -  m  oʊ ]",
-    },
-    {
-      id: 2,
-      date: "2025-08-11",
-      word: "rabbit",
-      difficulty: "Kindergarten",
-      errorRate: "25.00%",
-      errors: "['r']",
-      details: "【Diagnosis Layer】\n  - Target: 'rabbit' (/ˈræbɪt/)\n  - User: /ˈwæbɪt/",
-    },
-    {
-      id: 3,
-      date: "2025-08-10",
-      word: "apple",
-      difficulty: "Kindergarten",
-      errorRate: "5.00%",
-      errors: "['p']",
-      details: "【Diagnosis Layer】\n  - Target: 'apple' (/ˈæpəl/)\n  - User: /ˈæbəl/",
-    },
-    {
-      id: 4,
-      date: "2025-08-09",
-      word: "school",
-      difficulty: "Primary",
-      errorRate: "15.00%",
-      errors: "['sch']",
-      details: "【Diagnosis Layer】\n  - Target: 'school' (/skuːl/)\n  - User: /ʃuːl/",
-    },
-    {
-      id: 5,
-      date: "2025-08-08",
-      word: "computer",
-      difficulty: "Middle School",
-      errorRate: "30.00%",
-      errors: "['mp', 't']",
-      details: "【Diagnosis Layer】\n  - Target: 'computer' (/kəmˈpjuːtər/)\n  - User: /kəˈpjuːdər/",
-    },
-  ],
+// =================================================================
+// ==   數據處理輔助函數 (Data Processing Helpers)                ==
+// =================================================================
+
+const processRecordsForCharts = (records) => {
+  if (!records || records.length === 0) {
+    // 如果沒有記錄，返回空的圖表數據結構
+    return {
+      progressChart: { dates: [], errorRates: [] },
+      phonemeChart: { phonemes: [], errorCounts: [] },
+      heatmapChart: [],
+      difficultyChart: { levels: [], counts: [] },
+    };
+  }
+
+  const timeZone = 'Asia/Hong_Kong'; // UTC+8
+
+  // --- 1. 整體進度圖 (Progress Chart) ---
+  const progressData = {};
+  records.forEach(rec => {
+    const dateStr = format(toDate(parseISO(rec.created_at), { timeZone }), 'yyyy-MM-dd');
+    if (!progressData[dateStr]) {
+      progressData[dateStr] = { totalRate: 0, count: 0 };
+    }
+    progressData[dateStr].totalRate += rec.error_rate || 0;
+    progressData[dateStr].count += 1;
+  });
+  const progressChart = {
+    dates: Object.keys(progressData).sort(),
+    errorRates: Object.keys(progressData).sort().map(date => {
+      const avgRate = (progressData[date].totalRate / progressData[date].count) * 100;
+      return parseFloat(avgRate.toFixed(2));
+    }),
+  };
+
+  // --- 2. 常見錯誤音素圖 (Phoneme Chart) ---
+  // 注意：你的 practice_sessions 表沒有直接的 phoneme 錯誤字段。
+  // 我們將從 full_log 中解析。這是一個示例，你可能需要根據你的日誌結構調整。
+  const phonemeErrors = {};
+  records.forEach(rec => {
+    try {
+      const log = JSON.parse(rec.full_log);
+      if (log && log.errorSummary && Array.isArray(log.errorSummary)) {
+        log.errorSummary.forEach(phoneme => {
+          phonemeErrors[phoneme] = (phonemeErrors[phoneme] || 0) + 1;
+        });
+      }
+    } catch (e) { /* 忽略無法解析的日誌 */ }
+  });
+  const sortedPhonemes = Object.entries(phonemeErrors).sort((a, b) => b[1] - a[1]).slice(0, 10); // 只顯示前10個
+  const phonemeChart = {
+    phonemes: sortedPhonemes.map(p => p[0]),
+    errorCounts: sortedPhonemes.map(p => p[1]),
+  };
+
+  // --- 3. 練習頻率熱力圖 (Heatmap Chart) ---
+  const practiceCountsByDay = {};
+  records.forEach(rec => {
+    const dateStr = format(toDate(parseISO(rec.created_at), { timeZone }), 'yyyy-MM-dd');
+    practiceCountsByDay[dateStr] = (practiceCountsByDay[dateStr] || 0) + 1;
+  });
+
+  const firstDate = parseISO(records[records.length - 1].created_at);
+  const lastDate = parseISO(records[0].created_at);
+  const weeks = {};
+  eachDayOfInterval({ start: startOfWeek(firstDate, { weekStartsOn: 1 }), end: endOfWeek(lastDate, { weekStartsOn: 1 }) }).forEach(day => {
+    const weekStartDate = format(startOfWeek(day, { weekStartsOn: 1 }), 'MMM d');
+    if (!weeks[weekStartDate]) {
+      weeks[weekStartDate] = Array(7).fill(0);
+    }
+    const dayIndex = (getDay(day) + 6) % 7; // 0=Mon, 6=Sun
+    const dateStr = format(day, 'yyyy-MM-dd');
+    weeks[weekStartDate][dayIndex] = practiceCountsByDay[dateStr] || 0;
+  });
+  const heatmapChart = Object.entries(weeks).map(([weekName, data]) => ({
+    name: weekName,
+    data: data.map((count, i) => ({ x: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i], y: count })),
+  }));
+
+
+  // --- 4. 難度分佈圖 (Difficulty Chart) ---
+  const difficultyCounts = {};
+  records.forEach(rec => {
+    const level = rec.diffi_level || 'Unknown';
+    difficultyCounts[level] = (difficultyCounts[level] || 0) + 1;
+  });
+  const difficultyChart = {
+    levels: Object.keys(difficultyCounts),
+    counts: Object.values(difficultyCounts),
+  };
+
+  return { progressChart, phonemeChart, heatmapChart, difficultyChart };
 };
+
+
+// =================================================================
+// ==   Records 組件                                              ==
+// =================================================================
 
 export default function Records() {
   const { t } = useTranslation();
-  const [records, setRecords] = useState([]);
-  const [sortConfig, setSortConfig] = useState({ key: "date", direction: "desc" });
+  const session = useSession();
+  const userId = session?.user?.id;
+  const timeZone = 'Asia/Hong_Kong';
+
+  const [sortConfig, setSortConfig] = useState({ key: "created_at", direction: "desc" });
   const [expandedRow, setExpandedRow] = useState(null);
 
-  useEffect(() => {
-    const sorted = [...mockData.detailedRecords].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    setRecords(sorted);
-  }, []);
+  // ✨ 核心變更 1: 使用 useQuery 從後端獲取真實數據
+  const { data: rawRecords, isLoading, isError } = useQuery({
+    queryKey: ['practiceRecords', userId],
+    queryFn: () => getPracticeRecords(userId),
+    enabled: !!userId,
+  });
+
+  // ✨ 核心變更 2: 使用 useMemo 處理數據，只有在原始數據變化時才重新計算
+  const chartData = useMemo(() => processRecordsForCharts(rawRecords), [rawRecords]);
+  
+  const sortedRecords = useMemo(() => {
+    if (!rawRecords) return [];
+    const sorted = [...rawRecords].sort((a, b) => {
+      let valA = a[sortConfig.key];
+      let valB = b[sortConfig.key];
+      if (sortConfig.key === "error_rate") {
+        valA = parseFloat(valA);
+        valB = parseFloat(valB);
+      }
+      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [rawRecords, sortConfig]);
 
   const handleSort = (key) => {
     let direction = "asc";
     if (sortConfig.key === key && sortConfig.direction === "asc") direction = "desc";
     setSortConfig({ key, direction });
-
-    const sorted = [...records].sort((a, b) => {
-      let valA = a[key];
-      let valB = b[key];
-      if (key === "errorRate") {
-        valA = parseFloat(valA);
-        valB = parseFloat(valB);
-      }
-      if (valA < valB) return direction === "asc" ? -1 : 1;
-      if (valA > valB) return direction === "asc" ? 1 : -1;
-      return 0;
-    });
-    setRecords(sorted);
   };
 
   const getSortClassName = (key) => {
@@ -107,198 +158,57 @@ export default function Records() {
     return `sortable active ${sortConfig.direction}`;
   };
 
-  // ... Chart options 保持不變 ...
-  const progressChartOptions = {
-    chart: {
-      id: "progress",
-      toolbar: { show: false },
-      background: "transparent",
-      fontFamily: "Inter, sans-serif",
-    },
-    xaxis: { categories: mockData.progressChart.dates },
-    stroke: { curve: "smooth", width: 3 },
-    colors: ["#4f46e5"],
-    markers: { size: 5 },
-    grid: { borderColor: "#e2e8f0" },
-    yaxis: { labels: { formatter: (val) => val.toFixed(0) + "%" } },
-    tooltip: { y: { formatter: (val) => val.toFixed(2) + "%" } },
-  };
+  // --- Chart Options (保持大部分不變，只修改數據源) ---
+  const progressChartOptions = { chart: { id: "progress", toolbar: { show: false }, background: "transparent" }, xaxis: { categories: chartData.progressChart.dates }, stroke: { curve: "smooth", width: 3 }, colors: ["#4f46e5"], markers: { size: 5 }, grid: { borderColor: "#e2e8f0" }, yaxis: { labels: { formatter: (val) => val.toFixed(0) + "%" } }, tooltip: { y: { formatter: (val) => val.toFixed(2) + "%" } } };
+  const phonemeChartOptions = { chart: { id: "phoneme", type: "bar", toolbar: { show: false }, background: "transparent" }, plotOptions: { bar: { horizontal: true, barHeight: "50%", borderRadius: 4 } }, xaxis: { categories: chartData.phonemeChart.phonemes }, colors: ["#f59e0b"], grid: { borderColor: "#e2e8f0" } };
+  const heatmapChartOptions = { chart: { type: "heatmap", toolbar: { show: false }, background: "transparent" }, plotOptions: { heatmap: { radius: 4, enableShades: false, colorScale: { ranges: [{ from: 0, to: 0, name: "None", color: "#ebedf0" }, { from: 1, to: 3, name: "Low", color: "#9be9a8" }, { from: 4, to: 7, name: "Medium", color: "#40c463" }, { from: 8, to: 15, name: "High", color: "#30a14e" }] } } }, stroke: { width: 2, colors: ["#ffffff"] }, dataLabels: { enabled: false }, legend: { position: "top", horizontalAlign: "left" }, xaxis: { type: "category", categories: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] }, grid: { borderColor: "#e2e8f0", padding: { top: -20 } }, tooltip: { y: { formatter: (value) => `Practices: <b>${value}</b>` } } };
+  const difficultyChartOptions = { chart: { type: "donut", background: "transparent" }, labels: chartData.difficultyChart.levels, colors: ["#67e8f9", "#38bdf8", "#0ea5e9", "#0284c7"], legend: { position: "bottom" }, dataLabels: { enabled: true, formatter: (val) => val.toFixed(1) + "%" }, plotOptions: { pie: { donut: { labels: { show: true, total: { show: true, label: "Total Practices" } } } } } };
 
-  const phonemeChartOptions = {
-    chart: {
-      id: "phoneme",
-      type: "bar",
-      toolbar: { show: false },
-      background: "transparent",
-      fontFamily: "Inter, sans-serif",
-    },
-    plotOptions: {
-      bar: {
-        horizontal: true,
-        barHeight: "50%",
-        borderRadius: 4,
-      },
-    },
-    xaxis: { categories: mockData.phonemeChart.phonemes },
-    colors: ["#f59e0b"],
-    grid: { borderColor: "#e2e8f0" },
-  };
-
-  const heatmapChartOptions = {
-    chart: {
-      type: "heatmap",
-      toolbar: { show: false },
-      background: "transparent",
-      fontFamily: "Inter, sans-serif",
-    },
-    plotOptions: {
-      heatmap: {
-        radius: 4,
-        enableShades: false,
-        colorScale: {
-          ranges: [
-            { from: 0, to: 0, name: "None", color: "#ebedf0" },
-            { from: 1, to: 3, name: "Low", color: "#9be9a8" },
-            { from: 4, to: 7, name: "Medium", color: "#40c463" },
-            { from: 8, to: 15, name: "High", color: "#30a14e" },
-            { from: 16, to: 100, name: "Very High", color: "#216e39" },
-          ],
-        },
-      },
-    },
-    stroke: { width: 2, colors: ["#ffffff"] },
-    dataLabels: { enabled: false },
-    legend: {
-      position: "top",
-      horizontalAlign: "left",
-      markers: { width: 12, height: 12, radius: 2 },
-    },
-    xaxis: {
-      type: "category",
-      categories: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    },
-    grid: { borderColor: "#e2e8f0", padding: { top: -20 } },
-    tooltip: {
-      y: {
-        formatter: (value) => `Practice Count: <b>${value}</b>`,
-      },
-    },
-  };
-
-  const difficultyChartOptions = {
-    chart: {
-      type: "donut",
-      background: "transparent",
-      fontFamily: "Inter, sans-serif",
-    },
-    labels: mockData.difficultyChart.levels,
-    colors: ["#67e8f9", "#38bdf8", "#0ea5e9", "#0284c7"],
-    legend: { position: "bottom" },
-    dataLabels: { enabled: true, formatter: (val) => val.toFixed(1) + "%" },
-    plotOptions: {
-      pie: {
-        donut: {
-          labels: {
-            show: true,
-            total: {
-              show: true,
-              label: "Total Practices",
-            },
-          },
-        },
-      },
-    },
-  };
+  if (isLoading) {
+    return <main className="main-content width-records"><h1 className="page-title">{t('recordsPage.title')}</h1><Loader /></main>;
+  }
+  if (isError) {
+    return <main className="main-content width-records"><p>Error loading records.</p></main>;
+  }
+  if (!rawRecords || rawRecords.length === 0) {
+    return <main className="main-content width-records"><h1 className="page-title">{t('recordsPage.title')}</h1><p>No practice records found yet. Start practicing to see your progress!</p></main>;
+  }
 
   return (
     <main className="main-content width-records">
       <h1 className="page-title">{t('recordsPage.title')}</h1>
-
       <div className="dashboard-grid">
-        <div className="chart-card">
-          <h3 className="chart-title">{t('recordsPage.overallProgress')}</h3>
-          <Chart
-            options={progressChartOptions}
-            series={[{ name: "Error Rate", data: mockData.progressChart.errorRates }]}
-            type="line"
-            height={300}
-          />
-        </div>
-        <div className="chart-card">
-          <h3 className="chart-title">{t('recordsPage.frequentErrors')}</h3>
-          <Chart
-            options={phonemeChartOptions}
-            series={[{ name: "Errors", data: mockData.phonemeChart.errorCounts }]}
-            type="bar"
-            height={300}
-          />
-        </div>
-        <div className="chart-card">
-          <h3 className="chart-title">{t('recordsPage.weeklyFrequency')}</h3>
-          <Chart
-            options={heatmapChartOptions}
-            series={mockData.heatmapChart}
-            type="heatmap"
-            height={300}
-          />
-        </div>
-        <div className="chart-card">
-          <h3 className="chart-title">{t('recordsPage.difficultyDistribution')}</h3>
-          <Chart
-            options={difficultyChartOptions}
-            series={mockData.difficultyChart.counts}
-            type="donut"
-            height={300}
-          />
-        </div>
+        <div className="chart-card"><h3 className="chart-title">{t('recordsPage.overallProgress')}</h3><Chart options={progressChartOptions} series={[{ name: "Avg Error Rate", data: chartData.progressChart.errorRates }]} type="line" height={300} /></div>
+        <div className="chart-card"><h3 className="chart-title">{t('recordsPage.frequentErrors')}</h3><Chart options={phonemeChartOptions} series={[{ name: "Errors", data: chartData.phonemeChart.errorCounts }]} type="bar" height={300} /></div>
+        <div className="chart-card"><h3 className="chart-title">{t('recordsPage.weeklyFrequency')}</h3><Chart options={heatmapChartOptions} series={chartData.heatmapChart} type="heatmap" height={300} /></div>
+        <div className="chart-card"><h3 className="chart-title">{t('recordsPage.difficultyDistribution')}</h3><Chart options={difficultyChartOptions} series={chartData.difficultyChart.counts} type="donut" height={300} /></div>
       </div>
-
       <div className="records-section">
-        <h2 className="page-title" style={{ fontSize: "1.8rem", marginBottom: "1.5rem" }}>
-          {t('recordsPage.detailedHistory')}
-        </h2>
-
+        <h2 className="page-title" style={{ fontSize: "1.8rem", marginBottom: "1.5rem" }}>{t('recordsPage.detailedHistory')}</h2>
         <table className="records-table">
           <thead>
             <tr>
-              <th className={getSortClassName("date")} onClick={() => handleSort("date")}>
-                {t('recordsPage.table.date')}
-              </th>
+              <th className={getSortClassName("created_at")} onClick={() => handleSort("created_at")}>{t('recordsPage.table.date')}</th>
               <th>{t('recordsPage.table.targetWord')}</th>
               <th>{t('recordsPage.table.difficulty')}</th>
-              <th className={getSortClassName("errorRate")} onClick={() => handleSort("errorRate")}>
-                {t('recordsPage.table.errorRate')}
-              </th>
+              <th className={getSortClassName("error_rate")} onClick={() => handleSort("error_rate")}>{t('recordsPage.table.errorRate')}</th>
               <th>{t('recordsPage.table.errorPhonemes')}</th>
               <th>{t('recordsPage.table.details')}</th>
             </tr>
           </thead>
           <tbody>
-            {records.map((record) => (
-              <React.Fragment key={record.id}>
+            {sortedRecords.map((record) => (
+              <React.Fragment key={record.psid}>
                 <tr>
-                  <td>{record.date}</td>
-                  <td>{record.word}</td>
-                  <td>{record.difficulty}</td>
-                  <td>{record.errorRate}</td>
-                  <td>{record.errors}</td>
-                  <td>
-                    <button
-                      className="details-btn"
-                      onClick={() => setExpandedRow(expandedRow === record.id ? null : record.id)}
-                    >
-                      {expandedRow === record.id ? t('recordsPage.table.hide') : t('recordsPage.table.details')}
-                    </button>
-                  </td>
+                  <td>{format(toDate(parseISO(record.created_at), { timeZone }), 'yyyy-MM-dd HH:mm')}</td>
+                  <td>{record.target_word}</td>
+                  <td>{record.diffi_level}</td>
+                  <td>{`${((record.error_rate || 0) * 100).toFixed(2)}%`}</td>
+                  <td>{JSON.parse(record.full_log)?.errorSummary?.join(', ') || 'N/A'}</td>
+                  <td><button className="details-btn" onClick={() => setExpandedRow(expandedRow === record.psid ? null : record.psid)}>{expandedRow === record.psid ? t('recordsPage.table.hide') : t('recordsPage.table.details')}</button></td>
                 </tr>
-                {expandedRow === record.id && (
-                  <tr className="details-row">
-                    <td colSpan="6">
-                      <div className="details-content">
-                        <pre>{record.details}</pre>
-                      </div>
-                    </td>
-                  </tr>
+                {expandedRow === record.psid && (
+                  <tr className="details-row"><td colSpan="6"><div className="details-content"><pre>{record.full_log}</pre></div></td></tr>
                 )}
               </React.Fragment>
             ))}
