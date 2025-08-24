@@ -149,7 +149,7 @@ const AppWithAuth = () => {
       // 我們強制凍結畫面 0.5 秒，確保所有 DOM 和 JS 都已準備就緒
       const timer = setTimeout(() => {
         setInitialLoad(false);
-      }, 1); // 0.01 秒凍結時間
+      }, 100); // 0.1 秒凍結時間
       return () => clearTimeout(timer);
     }
   }, [session]);
