@@ -10,6 +10,8 @@
   "miniProfile": {
     "language": "Language",
     "level": "Level",
+    "sug_lvl": "Suggested Level",
+    "cur_lvl": "Current Level",
     "target": "Target",
     "errors": "Errors",
     "userId": "ID:",

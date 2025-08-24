@@ -1,13 +1,14 @@
-// src/App.jsx (Corrected Final Version with All Imports)
+// src/App.jsx (Final version to support the new MiniProfile)
 
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useSession, useSupabaseClient, SessionContextProvider } from '@supabase/auth-helpers-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from './supabaseClient';
-import { getUserData } from './api/supabaseAPI';
+// ✨ 這裡的 getUserData 函數需要能夠獲取 status 表的資料
+import { getUserData } from './api/supabaseAPI'; 
 
-// Pages and Components
+// ... (其他導入語句保持不變)
 import Login from './pages/Login';
 import Introduction from './pages/Introduction';
 import Practice from './pages/Practice';
@@ -19,7 +20,8 @@ import Header from './components/Header';
 import LanguageSelector from './components/LanguageSelector';
 import MiniProfile from './components/MiniProfile';
 import ResetPassword from './components/ResetPassword';
-import AuthCallback from './pages/AuthCallback'; // ✨ 這是我之前遺漏的導入語句
+import AuthCallback from './pages/AuthCallback';
+
 
 // =================================================================
 // ==   自定義 Hooks (Custom Hooks)                               ==
@@ -29,7 +31,8 @@ const useUser = () => {
   const userId = session?.user?.id;
   return useQuery({
     queryKey: ['user', userId],
-    queryFn: () => getUserData(userId),
+    // ✨ 假設 getUserData 現在會返回 { ..., settings: {...}, status: {...} }
+    queryFn: () => getUserData(userId), 
     enabled: !!userId,
     staleTime: 1000 * 60 * 5,
   });
@@ -47,9 +50,19 @@ function App() {
 
   const [showPasswordReset, setShowPasswordReset] = useState(false);
 
-  const { data: userData, isLoading: isLoadingProfile, isError } = useUser();
-  const hasCompletedTest = !!userData?.settings?.sug_lvl;
+  const { data: profileData, isLoading: isLoadingProfile, isError } = useUser();
+  const hasCompletedTest = !!profileData?.settings?.sug_lvl;
 
+  const combinedUserData = useMemo(() => {
+    if (!profileData) return null;
+    
+    return {
+      ...profileData,
+      email: session?.user?.email,
+    };
+  }, [session, profileData]);
+
+  // ... (useEffect 和其他函數保持不變)
   useEffect(() => {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -74,15 +87,10 @@ function App() {
   }, [navigate, queryClient]);
 
   const handlePasswordUpdated = () => {
-    // 隱藏重置密碼界面
     setShowPasswordReset(false);
-    // 調用我們已經寫好的 handleLogout 函數！
-    // handleLogout 會負責：
-    // 1. 登出 Supabase
-    // 2. 清理 React Query 緩存
-    // 3. 導航到 /login 頁面
     handleLogout(); 
   };
+
 
   const MainLayout = ({ children }) => (
     <div className="app-container">
@@ -94,11 +102,12 @@ function App() {
         hasCompletedTest={hasCompletedTest}
       />
       <ClickSpark>{children}</ClickSpark>
-      <MiniProfile userData={userData} />
+      <MiniProfile userData={combinedUserData} />
       <LanguageSelector />
     </div>
   );
 
+  // ... (其餘的 JSX 和路由保持不變)
   const isAuthLoading = useSession() === undefined;
   if (isAuthLoading || (session && isLoadingProfile)) {
     return <div style={{ padding: 20, textAlign: 'center', fontSize: '1.2rem' }}>Loading Application...</div>;
@@ -120,12 +129,11 @@ function App() {
       <Route path="/login" element={session ? <Navigate to={location.state?.from?.pathname || "/introduction"} replace /> : <ClickSpark><Login /></ClickSpark>} />
       <Route path="/" element={<Navigate to="/introduction" replace />} />
       
-      {/* 添加 /auth/callback 路由 */}
       <Route path="/auth/callback" element={<AuthCallback />} />
 
       <Route path="/introduction" element={<PrivateRoute><MainLayout><Introduction /></MainLayout></PrivateRoute>} />
       <Route path="/profile" element={<PrivateRoute><MainLayout><Profile /></MainLayout></PrivateRoute>} />
-      <Route path="/practice" element={<PrivateRoute><MainLayout><Practice practiceLanguage={userData?.settings?.language || 'en'} /></MainLayout></PrivateRoute>} />
+      <Route path="/practice" element={<PrivateRoute><MainLayout><Practice practiceLanguage={combinedUserData?.settings?.language || 'en'} /></MainLayout></PrivateRoute>} />
       <Route path="/records" element={<PrivateRoute><MainLayout><Records /></MainLayout></PrivateRoute>} />
       <Route path="/initial-test" element={<PrivateRoute><MainLayout>{hasCompletedTest ? <Navigate to={location.state?.returnTo || "/introduction"} replace /> : <InitialTest onTestComplete={onTestComplete} />}</MainLayout></PrivateRoute>} />
       

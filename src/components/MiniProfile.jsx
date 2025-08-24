@@ -1,4 +1,4 @@
-// src/components/MiniProfile.jsx (The final, correct version)
+// src/components/MiniProfile.jsx (The final version with all requested features, including Error Phoneme)
 
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,14 +17,14 @@ const MiniProfile = ({ userData }) => {
     return languageMap[langCode] || langCode;
   };
 
-  // --- ✨ 核心修正: 直接從 userData 解構出頂層屬性 ✨ ---
-  const { id, email, username, settings, user_settings } = userData;
+  const { id, email, username, settings, status } = userData;
+
+  const practiceLanguage = settings?.language || 'en';
+  const suggestedLevel = settings?.sug_lvl || 'N/A';
+  const currentLevel = status?.cur_lvl || 'N/A';
   
-  // 從 settings 或 user_settings 中安全地獲取語言和等級
-  // 這使得元件對來自 App.jsx (user_settings) 或 Profile.jsx (settings) 的資料結構都有彈性
-  const effectiveSettings = settings || user_settings;
-  const practiceLanguage = effectiveSettings ? effectiveSettings.language : 'en';
-  const difficultyLevel = effectiveSettings ? effectiveSettings.cur_lvl : 'N/A';
+  // ✨ 核心新增：從 user_status 表中獲取【當前錯誤音素】 ✨
+  const currentErrorPhoneme = status?.cur_err || 'N/A'; // 來自 user_status.cur_err
 
   return (
     <div 
@@ -35,14 +35,17 @@ const MiniProfile = ({ userData }) => {
       <div className="profile-content">
         {isHovered ? (
           <>
+            <h4 className="status-header">{t('miniProfile.statusTitle', 'Current Status')}</h4>
+            
             <p><strong>{t('miniProfile.language', 'Language')}:</strong> {getDisplayLanguage(practiceLanguage)}</p>
-            <p><strong>{t('miniProfile.level', 'Level')}:</strong> {difficultyLevel}</p>
-            <p><strong>{t('miniProfile.target', 'Target')}:</strong> {'N/A'}</p>
-            <p><strong>{t('miniProfile.errors', 'Errors')}:</strong> {'N/A'}</p>
+            <p><strong>{t('miniProfile.sug_lvl', 'Suggested Lvl')}:</strong> {suggestedLevel}</p>
+            <p><strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> {currentLevel}</p>
+            <p><strong>{t('miniProfile.target', 'Target Word')}:</strong> {status?.cur_word || 'N/A'}</p>
+            <p><strong>{t('miniProfile.errors')}:</strong> {currentErrorPhoneme}</p>
           </>
         ) : (
           <>
-            {/* ✨ 現在這裡會正確地顯示 ID 和 Username ✨ */}
+            <h4 className="status-header">{t('miniProfile.title', 'Mini Profile')}</h4>
             <p><strong>{t('miniProfile.userId')}</strong> {id}</p>
             <p><strong>{t('miniProfile.emailAddress')}</strong> {email}</p>
             <p><strong>{t('miniProfile.userName')}</strong> {username || 'N/A'}</p>

@@ -10,6 +10,8 @@
   "miniProfile": {
     "language": "目前語言",
     "level": "難度等級",
+    "sug_lvl": "建議等級",
+    "cur_lvl": "目前等級",
     "target": "練習目標",
     "errors": "常見錯誤",
     "userId": "使用者 ID:",

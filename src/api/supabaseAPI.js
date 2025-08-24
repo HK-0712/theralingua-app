@@ -179,12 +179,15 @@ export const getPracticeRecords = async (userId) => {
     if (!userId) throw new Error('User ID is required.');
 
     const { data, error } = await supabase
-        .from('practice_sessions')
-        .select('*')
-        .eq('user_id', userId)
-        // 過濾掉初始測試的記錄
-        .neq('diffi_level', 'initial_test')
-        .order('created_at', { ascending: false });
+      .from('profiles')
+      .select(`
+        id,
+        username,
+        settings:user_settings(*),
+        status:user_status(*)
+      `)
+      .eq('id', userId)
+      .single(); // 使用 .single() 來獲取單一物件而不是陣列
 
     if (error) {
         console.error('Error fetching practice records:', error);

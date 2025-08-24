@@ -5,16 +5,16 @@
   bottom: 1.5rem;
   left: 1.5rem;
   z-index: 1000;
-  background-color: rgba(255, 255, 255, 0.85); /* 稍微增加不透明度，讓文字更清晰 */
+  background-color: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  padding: 0.85rem 1.25rem; /* 稍微增加內邊距 */
-  border-radius: 0.75rem; /* 圓角更大一些 */
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.75rem;
   box-shadow: 0 4px_12px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--border-color);
   cursor: pointer;
   transition: all 0.3s ease-in-out;
-  width: 300px; /* 可以適當加寬以容納標籤 */
+  width: 300px;
   box-sizing: border-box;
   text-align: left;
 }
@@ -24,66 +24,10 @@
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
-/* --- ✨ MODIFICATION START: 改為 Grid 佈局 ✨ --- */
-.profile-summary {
-  display: grid; /* 2. 使用 Grid 佈局 */
-  grid-template-columns: 1fr auto; /* 3. 分為兩列：主要內容佔滿剩餘空間，箭頭自適應寬度 */
-  align-items: center;
-  gap: 1rem; /* 設置列之間的間距 */
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-medium);
-}
-
-.profile-summary-info {
-  display: grid; /* 4. 內部也使用 Grid，方便對齊 */
-  grid-template-columns: 1fr; /* 單列佈局 */
-  gap: 2px; /* 設置 ID, Email, Username 之間的微小間距 */
-  overflow: hidden; /* 5. 防止長文字溢出 */
-}
-
-.profile-summary-info span {
-  white-space: nowrap; /* 防止文字換行 */
-  overflow: hidden;
-  text-overflow: ellipsis; /* 超出部分顯示省略號 */
-}
-/* --- ✨ MODIFICATION END ✨ --- */
-
-
-.profile-summary .arrow {
-  font-weight: 800;
-  transition: transform 0.2s ease;
-  justify-self: end; /* 讓箭頭在自己的格子裡靠右對齊 */
-}
-
-.mini-profile-container:hover .profile-summary .arrow {
-  transform: rotate(180deg);
-}
-
-.profile-details {
-  font-size: 0.85rem;
-  color: var(--text-dark);
-  /* 確保懸停時的內容高度與預設狀態相似，避免跳動 */
-  min-height: 54px; 
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.profile-details p {
-  margin: 0.3rem 0;
-  line-height: 1.4;
-}
-
-.profile-details strong {
-  color: var(--primary-color);
-  font-weight: 700;
-}
-
 .profile-content {
   display: grid;
-  grid-template-columns: 1fr; /* 預設為單列佈局 */
-  gap: 0.4rem; /* 設置行之間的間距 */
+  grid-template-columns: 1fr;
+  gap: 0.4rem; /* 調整行間距以適應更多內容 */
   font-size: 0.8rem;
   color: var(--text-dark);
 }
@@ -93,12 +37,23 @@
   line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis; /* 對所有行應用省略號，防止溢出 */
+  text-overflow: ellipsis;
 }
 
 .profile-content strong {
-  /* 讓標籤和數值有不同的顏色和字重 */
   color: var(--primary-color);
   font-weight: 700;
-  margin-right: 0.5em; /* 在標籤和數值之間增加一些間距 */
+  margin-right: 0.5em;
+}
+
+/* --- ✨ 核心新增：為新標題添加樣式 ✨ --- */
+.status-header {
+  font-size: 0.9rem; /* 讓標題字體稍大 */
+  font-weight: 800; /* 粗體 */
+  color: var(--text-dark);
+  text-align: center; /* 置中 */
+  margin-bottom: 0.4rem; /* 與下方內容的間距 */
+  padding-bottom: 0.4rem; /* 標題下方的內邊距 */
+  border-bottom: 1px solid var(--border-color); /* 添加一條分隔線 */
+  grid-column: 1 / -1; /* 確保標題橫跨整個網格 */
 }
