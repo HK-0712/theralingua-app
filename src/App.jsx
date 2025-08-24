@@ -74,8 +74,14 @@ function App() {
   }, [navigate, queryClient]);
 
   const handlePasswordUpdated = () => {
+    // 隱藏重置密碼界面
     setShowPasswordReset(false);
-    navigate('/profile');
+    // 調用我們已經寫好的 handleLogout 函數！
+    // handleLogout 會負責：
+    // 1. 登出 Supabase
+    // 2. 清理 React Query 緩存
+    // 3. 導航到 /login 頁面
+    handleLogout(); 
   };
 
   const MainLayout = ({ children }) => (
