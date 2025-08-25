@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/App.jsx (The Final, Data-Consistent Version)
 
 import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -20,16 +20,11 @@ import MiniProfile from './components/MiniProfile';
 import ResetPassword from './components/ResetPassword';
 import AuthCallback from './pages/AuthCallback';
 
-// --- 全螢幕載入元件 ---
+// --- 全螢幕載入元件 (保持不變) ---
 const FullScreenLoader = () => (
   <div style={{
-    position: 'fixed',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'var(--background-light)',
-    zIndex: 9999,
+    position: 'fixed', inset: 0, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', backgroundColor: 'var(--background-light)', zIndex: 9999,
   }}>
     <div style={{ fontSize: '1.5rem', color: 'var(--text-medium)', fontWeight: '600' }}>
       Loading Application...
@@ -37,7 +32,7 @@ const FullScreenLoader = () => (
   </div>
 );
 
-// --- 自定義 Hook: 獲取用戶數據 ---
+// --- 自定義 Hook: 獲取用戶數據 (保持不變) ---
 const useUser = () => {
   const session = useSession();
   const userId = session?.user?.id;
@@ -45,7 +40,7 @@ const useUser = () => {
     queryKey: ['user', userId],
     queryFn: () => getFullUserProfile(userId), 
     enabled: !!userId,
-    staleTime: 1000 * 60 * 5, // 5 分鐘
+    staleTime: 1000 * 60 * 5,
   });
 };
 
@@ -61,25 +56,34 @@ function App() {
 
   const { data: profileData, isLoading: isLoadingProfile, isError } = useUser();
   
-  const hasCompletedTest = !!profileData?.settings?.[0]?.sug_lvl;
+  // ✨✨✨ 核心修正 ✨✨✨
+  // 1. 首先，安全地獲取用戶的設置，並確定當前的練習語言
+  const userSettings = useMemo(() => profileData?.settings?.[0] || {}, [profileData]);
+  const practiceLanguage = userSettings?.language || 'en';
 
+  // 2. 然後，基於練習語言，從 status 陣列中篩選出正確的狀態
+  const userStatus = useMemo(() => {
+    if (!profileData?.status) return {};
+    // .find() 會返回第一個匹配的元素，或者 undefined
+    return profileData.status.find(s => s.language === practiceLanguage) || {};
+  }, [profileData, practiceLanguage]);
+
+  // 3. 最後，將所有數據合併成一個清晰、準確的對象
   const combinedUserData = useMemo(() => {
     if (!session || !profileData) return null;
     return { 
       ...profileData, 
       email: session.user.email,
-      settings: profileData.settings?.[0] || {},
-      status: profileData.status?.[0] || {}
+      settings: userSettings, // 使用我們已經計算好的 settings
+      status: userStatus,     // 使用我們精準篩選出的 status
     };
-  }, [session, profileData]);
+  }, [session, profileData, userSettings, userStatus]);
 
-  const practiceLanguage = combinedUserData?.settings?.language || 'en';
+  const hasCompletedTest = !!userSettings?.sug_lvl;
 
   useEffect(() => {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setShowPasswordReset(true);
-      }
+      if (event === 'PASSWORD_RECOVERY') setShowPasswordReset(true);
       if (event === 'SIGNED_OUT') {
         queryClient.clear();
         navigate('/login');
@@ -102,7 +106,7 @@ function App() {
     handleLogout(); 
   };
 
-  // --- 共享佈局元件 ---
+  // --- 共享佈局元件 (保持不變) ---
   const MainLayout = ({ children }) => (
     <div className="app-container">
       {showPasswordReset && <ResetPassword onPasswordUpdated={handlePasswordUpdated} />}
@@ -118,25 +122,22 @@ function App() {
     </div>
   );
 
-  if (session && isLoadingProfile) {
-    return <FullScreenLoader />;
-  }
-  
+  if (session && isLoadingProfile) return <FullScreenLoader />;
   if (isError) {
-      return (
-          <div style={{ padding: 20, textAlign: 'center', color: 'red' }}>
-              <p>Error: Failed to load user profile.</p>
-              <button onClick={handleLogout}>Logout and try again</button>
-          </div>
-      );
+    return (
+      <div style={{ padding: 20, textAlign: 'center', color: 'red' }}>
+        <p>Error: Failed to load user profile.</p>
+        <button onClick={handleLogout}>Logout and try again</button>
+      </div>
+    );
   }
 
-  // --- 路由守衛 ---
+  // --- 路由守衛 (保持不變) ---
   const PrivateRoute = ({ children }) => {
     return session ? children : <Navigate to="/login" state={{ from: location }} replace />;
   };
 
-  // --- 路由結構 ---
+  // --- 路由結構 (保持不變) ---
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to={location.state?.from?.pathname || "/introduction"} replace /> : <ClickSpark><Login /></ClickSpark>} />
@@ -176,28 +177,24 @@ function App() {
   );
 }
 
-// --- 帶有認證載入邏輯的 App 包裹器 ---
+// --- 帶有認證載入邏輯的 App 包裹器 (保持不變) ---
 const AppWithAuth = () => {
   const session = useSession();
   const [initialLoad, setInitialLoad] = useState(true);
 
   useEffect(() => {
     if (session !== undefined) {
-      const timer = setTimeout(() => {
-        setInitialLoad(false);
-      }, 100);
+      const timer = setTimeout(() => setInitialLoad(false), 100);
       return () => clearTimeout(timer);
     }
   }, [session]);
 
-  if (initialLoad) {
-    return <FullScreenLoader />;
-  }
+  if (initialLoad) return <FullScreenLoader />;
 
   return <App />;
 };
 
-// --- 最終導出的根元件 ---
+// --- 最終導出的根元件 (保持不變) ---
 export default function AppWrapper() {
   return (
     <BrowserRouter>

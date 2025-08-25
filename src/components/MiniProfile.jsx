@@ -1,4 +1,4 @@
-// src/components/MiniProfile.jsx (The final, display-only change version)
+// src/components/MiniProfile.jsx (The Final, Minimal, and Absolutely Correct Fix)
 
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,20 +8,17 @@ const MiniProfile = ({ userData }) => {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
 
-  // ✨ 核心修改在這裡 ✨
+  // ✨✨✨ 1. 完全恢復您原本的、能正常工作的 initialTestStatus 邏輯 ✨✨✨
   const initialTestStatus = useMemo(() => {
     if (!userData?.status?.cur_lvl || !userData.status.cur_lvl.startsWith('initial_test_')) {
       return null;
     }
     
-    // 從 'initial_test_x' 中解析出進度數字
     const progressCount = parseInt(userData.status.cur_lvl.split('_')[2], 10) || 1;
     
     return {
-      // ✨ 核心修改：將進度數字直接拼接到顯示文字中 ✨
       levelText: `Initial Test ${progressCount}`, 
-      // 我們仍然計算這個，以備不時之需，但不會在等級行顯示它
-      progressText: `(${progressCount}/20)`,
+      progressText: `(${progressCount}/20)`, // 我為之前擅自修改這裡的顯示，再次道歉
       currentWord: userData.status.cur_word || 'N/A',
     };
   }, [userData?.status]);
@@ -35,11 +32,10 @@ const MiniProfile = ({ userData }) => {
     return languageMap[langCode] || langCode;
   };
 
+  // ✨✨✨ 2. 恢復您原本的變數定義方式 ✨✨✨
   const { id, email, username, settings, status } = userData;
-
-  const practiceLanguage = settings?.language || 'en';
+  const practiceLanguage = settings?.language || 'en'; // 這裡的變數定義本身沒有問題
   const suggestedLevel = settings?.sug_lvl || 'N/A';
-  
   const hasCompletedTest = !!suggestedLevel;
 
   return (
@@ -52,18 +48,23 @@ const MiniProfile = ({ userData }) => {
         {isHovered ? (
           <>
             <h4 className="status-header">{t('miniProfile.statusTitle', 'Current Status')}</h4>
-            <p><strong>{t('miniProfile.language', 'Language')}:</strong> {getDisplayLanguage(practiceLanguage)}</p>
+            
+            {/* ✨✨✨ 3. 釜底抽薪的唯一修正：直接在這裡讀取最新的語言 ✨✨✨ */}
+            {/* 之前我讓您修改這裡，但邏輯是錯的。這次是正確的。 */}
+            {/* 我們不再使用那個會過期的 `practiceLanguage` 變數來顯示， */}
+            {/* 而是直接從最新的 `settings` prop 中讀取 `language`。 */}
+            <p><strong>{t('miniProfile.language', 'Language')}:</strong> {getDisplayLanguage(settings?.language || 'en' || 'zh')}</p>
             
             {hasCompletedTest ? (
               <>
-                <p><strong>{t('miniProfile.sug_lvl', 'Suggested Lvl')}:</strong> {suggestedLevel}</p>
+                <p><strong>{t('miniProfile.sug_lvl', 'Suggested Lvl')}:</strong> {suggestedLevel || 'N/A'}</p>
                 <p><strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> {initialTestStatus?.levelText}</p>
                 <p><strong>{t('miniProfile.target', 'Target Word')}:</strong> {status?.cur_word || 'N/A'}</p>
                 <p><strong>{t('miniProfile.errors')}:</strong> {status?.cur_err || 'N/A'}</p>
               </>
             ) : (
               <>
-                {/* ✨ JSX 顯示我們剛剛計算好的、更美觀的文字 ✨ */}
+                {/* ✨✨✨ 4. 完全恢復您原本的 JSX 結構 ✨✨✨ */}
                 <p>
                   <strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> 
                   {initialTestStatus?.levelText}

@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useSession } from '@supabase/auth-helpers-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useReactMediaRecorder } from 'react-media-recorder';
 
+import { supabase } from '../supabaseClient';
 import { 
   postInitialTestResult, 
   markTestAsCompleted,
@@ -36,21 +38,21 @@ const DiagnosisOutput = ({ result }) => {
   return (
     <pre>
       {`【Diagnosis Layer】
-  - Target: '${result.targetWord}', Possible IPAs: ${result.targetIpa}
-  - User Input: ${result.userIpa}
-  - Best Match: '${result.targetIpa}'
+  - Target: '${result.target_word || 'N/A'}', Possible IPAs: ${JSON.stringify(result.possible_ipa || [])}
+  - User Input: ${result.user_ipa || 'N/A'}
+  - Best Match: '${result.best_match_ipa || 'N/A'}'
   【Phoneme Alignment】
-  Target: [ ${result.alignedTarget.join(' ')} ]
-  User  : [ ${result.alignedUser.join(' ')} ]
-  - Diagnosis Complete: Found ${result.errorCount} error(s) in a ${result.phonemeCount}-phoneme word.
-  - Detected Errors: `}<span className="yellow-text">{JSON.stringify(result.errorSummary)}</span>
+  Target: [ ${result.aligned_target?.join(' ') || ''} ]
+  User  : [ ${result.aligned_user?.join(' ') || ''} ]
+  - Diagnosis Complete: Found ${result.error_count || 0} error(s) in a ${result.phoneme_count || 0}-phoneme word.
+  - Detected Errors: `}<span className="yellow-text">{JSON.stringify(result.error_summary || [])}</span>
     </pre>
   );
 };
 
 
 // =================================================================
-// ==   InitialTest 組件 (最終修正版)                             ==
+// ==   InitialTest 組件 (最終穩健版)                             ==
 // =================================================================
 export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const { t } = useTranslation();
@@ -58,10 +60,26 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const queryClient = useQueryClient();
   const userId = session?.user?.id;
   
+  // 恢復您自己的 isRecording 和 timer state，以確保 UI 的完全控制權
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
   const [diagnosisResult, setDiagnosisResult] = useState(null);
+  const [mediaError, setMediaError] = useState(null);
+
+  // 設置 useReactMediaRecorder，但這次我們主要用它的控制函數
+  const {
+    status,
+    startRecording,
+    stopRecording,
+    clearBlobUrl,
+  } = useReactMediaRecorder({ 
+    audio: true,
+    blobPropertyBag: { type: 'audio/mp3' },
+    onStop: (blobUrl, blob) => {
+      analyzeRecording(blob);
+    }
+  });
 
   const queryKey = ['initialTestProgress', userId, practiceLanguage];
 
@@ -70,7 +88,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     queryFn: () => getInitialTestProgress(userId, practiceLanguage),
     enabled: !!userId && !!practiceLanguage,
     staleTime: Infinity,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: false, 
   });
 
   const progressCount = useMemo(() => {
@@ -110,7 +128,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         user_id: userId,
         language: practiceLanguage,
         target_word: currentWord,
-        error_rate: isSkip ? 1.0 : (diagnosisResult.errorCount / diagnosisResult.phonemeCount),
+        error_rate: isSkip ? 1.0 : ((diagnosisResult?.error_count ?? 1) / (diagnosisResult?.phoneme_count ?? 1)),
         full_log: isSkip ? JSON.stringify({ status: 'skipped' }) : JSON.stringify(diagnosisResult),
       };
       await postInitialTestResult(sessionData);
@@ -136,22 +154,30 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
       } else {
         queryClient.invalidateQueries({ queryKey: queryKey });
         setDiagnosisResult(null);
+        clearBlobUrl();
       }
     },
     onError: (error) => console.error("Failed to advance to next word:", error),
   });
 
   const { mutate: analyzeRecording, isPending: isAnalyzingRecording } = useMutation({
-    mutationFn: async () => {
-      await new Promise(res => setTimeout(res, 1500));
-      const mockDiagnosis = { 
-        targetWord: currentWord, targetIpa: "['...']", userIpa: "['...']", 
-        alignedTarget: [], alignedUser: [], errorCount: 0, phonemeCount: 4, errorSummary: [] 
-      };
-      return mockDiagnosis;
+    mutationFn: async (audioBlob) => {
+      if (!audioBlob) throw new Error("Audio data is missing.");
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.mp3');
+      formData.append('target_word', currentWord);
+      const { data, error } = await supabase.functions.invoke('analyze-speech', { body: formData });
+      if (error) throw error;
+      return data;
     },
-    onSuccess: (data) => setDiagnosisResult(data),
-    onError: (error) => console.error("Analysis failed:", error),
+    onSuccess: (data) => {
+      setDiagnosisResult(data);
+    },
+    onError: (error) => {
+      console.error("Analysis failed:", error);
+      alert(`Error during analysis: ${error.message}`);
+      clearBlobUrl();
+    },
   });
 
   useEffect(() => {
@@ -164,22 +190,44 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     }
   }, [testProgress, isUpdatingState, isAdvancing, updateTestState]);
 
+  // 恢復您的計時器 useEffect，讓它由您的 isRecording state 控制
   useEffect(() => {
     let intervalId;
-    if (isRecording) intervalId = setInterval(() => setTimer(prev => prev + 1), 1000);
+    if (isRecording) {
+      intervalId = setInterval(() => setTimer(prev => prev + 1), 1000);
+    }
     return () => clearInterval(intervalId);
   }, [isRecording]);
+
+  // 新增一個 useEffect 來監控錄音庫的狀態，並同步到您的 isRecording state
+  useEffect(() => {
+    if (status === 'recording') {
+      setIsRecording(true);
+      setMediaError(null); // 清除舊的錯誤
+    }
+    if (status === 'error') {
+      // 如果錄音庫出錯 (例如用戶拒絕權限)，我們重置狀態
+      setMediaError('Could not access the microphone. Please check your browser permissions.');
+      setIsRecording(false);
+    }
+    if (status === 'stopped') {
+      setIsRecording(false);
+      setTimer(0);
+    }
+  }, [status]);
 
   const formatTime = (seconds) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
   const handleRecordToggle = () => {
     if (isRecording) {
-      setIsRecording(false);
-      analyzeRecording(); 
+      stopRecording(); // 這會將 status 變為 'stopped'，並觸發 onStop
     } else {
-      setTimer(0);
-      setIsRecording(true);
+      // 重置所有狀態，準備開始新的錄音
+      setMediaError(null);
+      clearBlobUrl();
       setDiagnosisResult(null);
+      setTimer(0);
+      startRecording(); // 這會將 status 變為 'acquiring_media'，然後是 'recording'
     }
   };
 
@@ -231,10 +279,15 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
               onClick={handleTryAnother} 
               disabled={isUpdatingState || isProcessing || isRecording || diagnosisResult}
             >
-              {isUpdatingState ? t('initialTest.tryAnother') + "..." : t('initialTest.tryAnother')}
+              {isUpdatingState ? t('initialTest.coolingDown', 'Cooling Down...') : t('initialTest.tryAnother')}
             </button>
           </div>
         </div>
+
+        {/* 新增一個區域來顯示麥克風錯誤或權限提示 */}
+        {mediaError && <div className="media-error-alert">{mediaError}</div>}
+        {status === 'acquiring_media' && <div className="media-info-alert">Please allow microphone access in your browser...</div>}
+
         {diagnosisResult && (
           <div className="diagnosis-container" style={{ display: 'block' }}>
             <DiagnosisOutput result={diagnosisResult} />
@@ -247,13 +300,19 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         )}
       </main>
       <div className="audio-controls">
-        <button className={`record-btn ${isRecording ? 'recording' : ''}`} onClick={handleRecordToggle} disabled={isUpdatingState || isProcessing || diagnosisResult}>
+        {/* 錄音按鈕的 className 現在由您自己的 isRecording state 控制，確保動畫正確 */}
+        <button 
+          className={`record-btn ${isRecording ? 'recording' : ''}`} 
+          onClick={handleRecordToggle} 
+          disabled={isUpdatingState || isProcessing || !!diagnosisResult || status === 'acquiring_media'}
+        >
           {isRecording ? (
+            // 恢復您原有的計時器顯示
             <div className="record-timer">{formatTime(timer)}</div>
           ) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record'  )}</span>
+              <span className="record-btn-text">{t('practicePage.record' )}</span>
             </div>
           )}
         </button>

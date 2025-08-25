@@ -166,3 +166,24 @@
     transform: rotate(360deg);
   }
 }
+
+/* Add this to your CSS file */
+.media-error-alert {
+  background-color: #fee2e2;
+  color: #991b1b;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.media-info-alert {
+  background-color: #e0f2fe;
+  color: #075985;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
