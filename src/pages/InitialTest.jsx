@@ -1,6 +1,6 @@
-// src/pages/InitialTest.jsx (The new, persistent, and full version)
+// src/pages/InitialTest.jsx (The final, robust, and truly correct version)
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSession } from '@supabase/auth-helpers-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -22,12 +22,12 @@ const difficultyLevels = ['Kindergarten', 'Primary-School', 'Secondary-School', 
 const totalCount = 20;
 
 const getDifficultyLevel = (count) => {
-  const difficultyIndex = Math.floor(count / 5);
+  const difficultyIndex = Math.floor((count - 1) / 5);
   return difficultyLevels[difficultyIndex] || difficultyLevels[difficultyLevels.length - 1];
 };
 
-const getNextTestWord = (completedCount) => {
-  const currentDifficulty = getDifficultyLevel(completedCount);
+const getNextTestWord = (progressCount) => {
+  const currentDifficulty = getDifficultyLevel(progressCount);
   const wordList = initialWordData[currentDifficulty] || []; 
   if (wordList.length === 0) return "Error: Word list empty for this level.";
   return wordList[Math.floor(Math.random() * wordList.length)];
@@ -51,45 +51,61 @@ const DiagnosisOutput = ({ result }) => {
 };
 
 // =================================================================
-// ==   InitialTest 組件 (重構後)                                 ==
+// ==   InitialTest 組件 (最終修正版)                             ==
 // =================================================================
-
 export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const { t } = useTranslation();
   const session = useSession();
   const queryClient = useQueryClient();
   const userId = session?.user?.id;
+  
+  const cooldownTimerRef = useRef(null);
 
-  // --- 本地 UI 狀態 ---
+  const [isTryAnotherCoolingDown, setIsTryAnotherCoolingDown] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
-  const [diagnosisResult, setDiagnosisResult] = useState(null); // 用於顯示模擬的診斷結果
+  const [diagnosisResult, setDiagnosisResult] = useState(null);
 
-  // ✨ 1. 使用 useQuery 從數據庫讀取測試進度 ✨
+  const queryKey = ['initialTestProgress', userId, practiceLanguage];
+
   const { data: testProgress, isLoading: isLoadingProgress, isError } = useQuery({
-    queryKey: ['initialTestProgress', userId, practiceLanguage],
+    queryKey: queryKey,
     queryFn: () => getInitialTestProgress(userId, practiceLanguage),
     enabled: !!userId && !!practiceLanguage,
-    staleTime: 1000 * 60 * 5, // 5分鐘內數據視為新鮮
-    refetchOnWindowFocus: false, // 確保切換窗口不會重置狀態
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
-  // ✨ 2. 從 useQuery 的數據中派生出 UI 需要的變量 ✨
   const progressCount = useMemo(() => {
-    if (!testProgress?.cur_lvl || !testProgress.cur_lvl.startsWith('initial_test_')) return 0;
-    return parseInt(testProgress.cur_lvl.split('_')[2], 10) || 0;
+    if (!testProgress?.cur_lvl || !testProgress.cur_lvl.startsWith('initial_test_')) return 1;
+    return parseInt(testProgress.cur_lvl.split('_')[2], 10) || 1;
   }, [testProgress]);
 
   const currentWord = useMemo(() => testProgress?.cur_word, [testProgress]);
   const currentDifficulty = useMemo(() => getDifficultyLevel(progressCount), [progressCount]);
 
-  // ✨ 3. 使用 useMutation 處理所有後端更新，這是防止重複點擊的核心 ✨
+  const { mutate: updateTestState, isPending: isUpdatingState } = useMutation({
+    mutationFn: (updates) => updateInitialTestProgress(userId, practiceLanguage, updates),
+    onMutate: async (newUpdates) => {
+      await queryClient.cancelQueries({ queryKey: queryKey });
+      const previousState = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, old => ({ ...old, ...newUpdates }));
+      return { previousState };
+    },
+    onError: (err, newUpdates, context) => {
+      queryClient.setQueryData(queryKey, context.previousState);
+      console.error("Update failed, rolled back:", err);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKey });
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+    },
+  });
+
   const { mutate: advanceToNextWord, isPending: isAdvancing } = useMutation({
     mutationFn: async ({ isSkip = false }) => {
       const newProgressCount = progressCount + 1;
-
-      // 步驟 A: 記錄本次結果到 practice_sessions
       const sessionData = {
         user_id: userId,
         language: practiceLanguage,
@@ -99,39 +115,32 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
       };
       await postInitialTestResult(sessionData);
 
-      // 步驟 B: 判斷測試是否完成
-      if (newProgressCount >= totalCount) {
+      if (newProgressCount > totalCount) {
         await markTestAsCompleted(userId, practiceLanguage);
         return { isCompleted: true };
       } else {
-        // 步驟 C: 如果未完成，更新 user_status 表以持久化進度
         const nextWord = getNextTestWord(newProgressCount);
         const updates = {
           cur_lvl: `initial_test_${newProgressCount}`,
           cur_word: nextWord,
-          cur_log: null, // 清空日誌
+          cur_log: null,
         };
         await updateInitialTestProgress(userId, practiceLanguage, updates);
         return { isCompleted: false };
       }
     },
     onSuccess: ({ isCompleted }) => {
-      queryClient.invalidateQueries({ queryKey: ['user'] }); // 讓 App.jsx 知道測試狀態可能已變
+      queryClient.invalidateQueries({ queryKey: ['user'] });
       if (isCompleted) {
-        onTestComplete(); // 觸發 App.jsx 中的導航
+        onTestComplete();
       } else {
-        // 使 'initialTestProgress' 查詢失效，觸發 useQuery 重新獲取最新進度
-        queryClient.invalidateQueries({ queryKey: ['initialTestProgress', userId, practiceLanguage] });
-        setDiagnosisResult(null); // 清空本地的診斷結果 UI
+        queryClient.invalidateQueries({ queryKey: queryKey });
+        setDiagnosisResult(null);
       }
     },
-    onError: (error) => {
-      console.error("Failed to advance to next word:", error);
-      // 可以在此處添加用戶提示
-    },
+    onError: (error) => console.error("Failed to advance to next word:", error),
   });
 
-  // 模擬 AI 分析的 Mutation
   const { mutate: analyzeRecording, isPending: isAnalyzingRecording } = useMutation({
     mutationFn: async () => {
       await new Promise(res => setTimeout(res, 1500));
@@ -141,37 +150,36 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
       };
       return mockDiagnosis;
     },
-    onSuccess: (data) => {
-        setDiagnosisResult(data);
-        // 當您的 Edge Function 完成後，可以在這裡將結果更新到 user_status
-        // updateInitialTestProgress(userId, practiceLanguage, { cur_log: JSON.stringify(data) });
-    },
+    onSuccess: (data) => setDiagnosisResult(data),
     onError: (error) => console.error("Analysis failed:", error),
   });
 
-  // ✨ 4. 處理用戶首次進入測試或數據庫無單詞的初始化邏輯 ✨
   useEffect(() => {
-    if (testProgress && !testProgress.cur_word && !isAdvancing) {
-      const firstWord = getNextTestWord(0);
-      updateInitialTestProgress(userId, practiceLanguage, {
-        cur_lvl: 'initial_test_0',
+    if (testProgress && !testProgress.cur_word && !isUpdatingState && !isAdvancing) {
+      const firstWord = getNextTestWord(1);
+      updateTestState({
+        cur_lvl: 'initial_test_1',
         cur_word: firstWord,
-      }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['initialTestProgress', userId, practiceLanguage] });
       });
     }
-  }, [testProgress, userId, practiceLanguage, queryClient, isAdvancing]);
+  }, [testProgress, isUpdatingState, isAdvancing, updateTestState]);
 
-  // 計時器邏輯
   useEffect(() => {
     let intervalId;
     if (isRecording) intervalId = setInterval(() => setTimer(prev => prev + 1), 1000);
     return () => clearInterval(intervalId);
   }, [isRecording]);
 
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+      }
+    };
+  }, []);
+
   const formatTime = (seconds) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
-  // --- 事件處理函數 ---
   const handleRecordToggle = () => {
     if (isRecording) {
       setIsRecording(false);
@@ -184,7 +192,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   };
 
   const handleNextWord = () => {
-    if (isAdvancing) return; // 雙重保險，防止在 disabled 狀態下觸發
+    if (isAdvancing) return;
     advanceToNextWord({ isSkip: false });
   };
 
@@ -195,21 +203,29 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   };
 
   const handleTryAnother = () => {
+    if (isTryAnotherCoolingDown || isUpdatingState) return;
+
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current);
+    }
+
     const wordList = initialWordData[currentDifficulty] || [];
     if (wordList.length <= 1) return;
     let newWord;
     do {
       newWord = wordList[Math.floor(Math.random() * wordList.length)];
     } while (newWord === currentWord);
-    // 更新數據庫中的當前單詞
-    updateInitialTestProgress(userId, practiceLanguage, { cur_word: newWord })
-      .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['initialTestProgress', userId, practiceLanguage] });
-      });
+    
+    updateTestState({ cur_word: newWord });
+
+    setIsTryAnotherCoolingDown(true);
+    
+    cooldownTimerRef.current = setTimeout(() => {
+      setIsTryAnotherCoolingDown(false);
+    }, 2000);
   };
 
-  // ✨ 5. 統一管理所有載入和禁用狀態 ✨
-  const isProcessing = isAnalyzingRecording || isAdvancing;
+  const isProcessing = isAnalyzingRecording || isAdvancing || isUpdatingState;
 
   if (isLoadingProgress) {
     return <main className="main-content width-practice"><div className="spinner"></div> Loading test...</main>;
@@ -222,13 +238,19 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     <>
       <main className="main-content width-practice">
         <div className="difficulty-section">
-          <h3 className="section-title">{t('initialTest.title')} ({progressCount + 1} / {totalCount})</h3>
+          <h3 className="section-title">{t('initialTest.title')} ({progressCount} / {totalCount})</h3>
         </div>
         <div className="practice-area">
           <p className="practice-text">{currentWord || '...'}</p>
           <div className="practice-controls">
             <button className="practice-btn" onClick={() => setIsConfirmingSkip(true)} disabled={isProcessing || isRecording || diagnosisResult}>{t('initialTest.skip')}</button>
-            <button className="practice-btn primary" onClick={handleTryAnother} disabled={isProcessing || isRecording || diagnosisResult}>{t('initialTest.tryAnother')}</button>
+            <button 
+              className="practice-btn primary" 
+              onClick={handleTryAnother} 
+              disabled={isTryAnotherCoolingDown || isProcessing || isRecording || diagnosisResult}
+            >
+              {t('initialTest.tryAnother')}
+            </button>
           </div>
         </div>
         {diagnosisResult && (
@@ -254,7 +276,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
           )}
         </button>
       </div>
-      {isProcessing && !isAdvancing && (
+      {isAnalyzingRecording && (
         <div id="custom-alert-overlay" className="visible">
           <div className="alert-box"><div className="spinner"></div><span className="alert-text">{t('practicePage.analyzing')}</span></div>
         </div>

@@ -3,19 +3,50 @@
 import { supabase } from '../supabaseClient';
 
 // =================================================================
-// ==   核心用戶數據 API (App.jsx, Profile.jsx)                   ==
+// ==   核心用戶數據 API                                          ==
 // =================================================================
 
 /**
- * 獲取當前登入用戶的完整個人資料，包括 settings 和 status。
- * 這是應用的核心數據獲取函數。
+ * [推薦使用] 獲取指定用戶的完整個人資料，包括 settings 和 status。
+ * 這個函數現在是應用中獲取用戶數據的核心。
+ * @param {string} userId - 用戶 ID。
+ * @returns {Promise<object>} - 包含 profile, settings, 和 status 的完整用戶對象。
+ */
+export const getFullUserProfile = async (userId) => {
+    if (!userId) throw new Error('User ID is required.');
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(`
+        id,
+        username,
+        settings:user_settings(*),
+        status:user_status(*)
+      `)
+      .eq('id', userId)
+      .single(); // 使用 .single() 來獲取單一物件而不是陣列
+
+    if (error) {
+        if (error.code === 'PGRST116') {
+            console.warn(`Full user profile not found for user ${userId}. This might happen during initial setup.`);
+            return null;
+        }
+        console.error('Error fetching full user profile:', error);
+        throw new Error(error.message);
+    }
+    
+    return data;
+};
+
+
+/**
+ * [舊版] 獲取當前登入用戶的個人資料和設置。
  * @param {string} userId - 當前用戶的 ID。
- * @returns {Promise<object>} - 包含用戶 profile、settings 和 status 的合併對象。
+ * @returns {Promise<object>} - 包含用戶 profile 和 settings 的合併對象。
  */
 export const getUserData = async (userId) => {
   if (!userId) throw new Error('User ID is required.');
 
-  // 使用 Promise.all 並行獲取 profiles 和 user_settings
   const [profilePromise, settingsPromise] = await Promise.all([
     supabase.from('profiles').select('id, username').eq('id', userId).single(),
     supabase.from('user_settings').select('language, sug_lvl').eq('user_id', userId).single()
@@ -30,7 +61,6 @@ export const getUserData = async (userId) => {
     throw new Error(settingsPromise.error.message);
   }
 
-  // 合併數據，提供一個統一的 user object
   return {
     ...profilePromise.data,
     settings: settingsPromise.data,
@@ -87,37 +117,11 @@ export const updateUserSettings = async (userId, updates) => {
 
 
 // =================================================================
-// ==   初始測試 API (InitialTest.jsx)                           ==
+// ==   初始測試 API                                              ==
 // =================================================================
 
 /**
- * 獲取初始測試的狀態。
- * 我們通過檢查 user_settings 中的 sug_lvl 來判斷是否完成。
- * 注意：你的數據庫沒有 test_completed_count，所以我們前端自己管理進度。
- * @param {string} userId - 用戶 ID。
- * @returns {Promise<object>} - 包含測試是否完成的狀態。
- */
-export const getInitialTestStatus = async (userId) => {
-    if (!userId) throw new Error('User ID is required.');
-    
-    const { data, error } = await supabase
-        .from('user_settings')
-        .select('sug_lvl')
-        .eq('user_id', userId)
-        .single();
-
-    if (error) {
-        console.error('Error fetching initial test status:', error);
-        throw new Error(error.message);
-    }
-    return {
-        is_test_completed: !!data.sug_lvl,
-    };
-};
-
-/**
  * 提交一條初始測試的日誌。
- * 我們將其記錄到 practice_sessions 表中，並用一個特殊的 diffi_level 來標記。
  * @param {object} sessionData - 要插入的會話數據。
  * @returns {Promise<object>} - 插入的數據。
  */
@@ -126,7 +130,7 @@ export const postInitialTestResult = async (sessionData) => {
     
     const payload = {
         ...sessionData,
-        diffi_level: 'initial_test' // 使用特殊標記
+        diffi_level: 'initial_test'
     };
 
     const { data, error } = await supabase
@@ -152,9 +156,6 @@ export const postInitialTestResult = async (sessionData) => {
 export const markTestAsCompleted = async (userId, language, suggestedLevel = 'Primary-School') => {
     if (!userId || !language) throw new Error('User ID and language are required.');
 
-    // 注意：這裡我們假設 sug_lvl 是存在 user_settings 表的。
-    // 如果您的設計是每個語言都有一個完成狀態，您可能需要調整數據庫結構。
-    // 根據您現有的結構，我們更新 user_settings。
     const { data, error } = await supabase
         .from('user_settings')
         .update({ sug_lvl: suggestedLevel })
@@ -169,35 +170,8 @@ export const markTestAsCompleted = async (userId, language, suggestedLevel = 'Pr
     return data;
 };
 
-
 // =================================================================
-// ==   練習記錄 API (Records.jsx)                               ==
-// =================================================================
-
-/**
- * 獲取指定用戶的所有練習記錄。
- * @param {string} userId - 用戶 ID。
- * @returns {Promise<Array>} - 練習記錄數組。
- */
-export const getPracticeRecords = async (userId) => {
-    if (!userId) throw new Error('User ID is required.');
-
-    const { data, error } = await supabase
-      .from('practice_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-        console.error('Error fetching practice records:', error);
-        throw new Error(error.message);
-    }
-    return data;
-};
-
-
-// =================================================================
-// ==   初始測試狀態管理 API (InitialTest.jsx) - ✨ 新增部分 ✨     ==
+// ==   初始測試狀態管理 API (新增部分)                           ==
 // =================================================================
 
 /**
@@ -217,7 +191,6 @@ export const getInitialTestProgress = async (userId, language) => {
     .single();
 
   if (error) {
-    // 如果因為沒有記錄而查詢失敗 (Supabase 的 .single() 特性)，返回一個預設的初始狀態
     if (error.code === 'PGRST116') {
       console.warn(`No initial test progress found for user ${userId} in language ${language}. Returning default.`);
       return { cur_lvl: 'initial_test_0', cur_word: null, cur_log: null };
@@ -253,4 +226,30 @@ export const updateInitialTestProgress = async (userId, language, updates) => {
   }
 
   return data;
+};
+
+
+// =================================================================
+// ==   練習記錄 API (Records.jsx)                               ==
+// =================================================================
+
+/**
+ * [舊版] 獲取指定用戶的所有練習記錄。
+ * @param {string} userId - 用戶 ID。
+ * @returns {Promise<Array>} - 練習記錄數組。
+ */
+export const getPracticeRecords = async (userId) => {
+    if (!userId) throw new Error('User ID is required.');
+
+    const { data, error } = await supabase
+      .from('practice_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching practice records:', error);
+        throw new Error(error.message);
+    }
+    return data;
 };
