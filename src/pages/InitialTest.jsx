@@ -1,6 +1,4 @@
-// src/pages/InitialTest.jsx (The final, robust, and truly correct version)
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSession } from '@supabase/auth-helpers-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +48,7 @@ const DiagnosisOutput = ({ result }) => {
   );
 };
 
+
 // =================================================================
 // ==   InitialTest 組件 (最終修正版)                             ==
 // =================================================================
@@ -59,9 +58,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const queryClient = useQueryClient();
   const userId = session?.user?.id;
   
-  const cooldownTimerRef = useRef(null);
-
-  const [isTryAnotherCoolingDown, setIsTryAnotherCoolingDown] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
@@ -86,7 +82,11 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const currentDifficulty = useMemo(() => getDifficultyLevel(progressCount), [progressCount]);
 
   const { mutate: updateTestState, isPending: isUpdatingState } = useMutation({
-    mutationFn: (updates) => updateInitialTestProgress(userId, practiceLanguage, updates),
+    mutationFn: async (updates) => {
+      const updatePromise = updateInitialTestProgress(userId, practiceLanguage, updates);
+      const delayPromise = new Promise(resolve => setTimeout(resolve, 2000));
+      await Promise.all([updatePromise, delayPromise]);
+    },
     onMutate: async (newUpdates) => {
       await queryClient.cancelQueries({ queryKey: queryKey });
       const previousState = queryClient.getQueryData(queryKey);
@@ -170,14 +170,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     return () => clearInterval(intervalId);
   }, [isRecording]);
 
-  useEffect(() => {
-    return () => {
-      if (cooldownTimerRef.current) {
-        clearTimeout(cooldownTimerRef.current);
-      }
-    };
-  }, []);
-
   const formatTime = (seconds) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
   const handleRecordToggle = () => {
@@ -203,11 +195,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   };
 
   const handleTryAnother = () => {
-    if (isTryAnotherCoolingDown || isUpdatingState) return;
-
-    if (cooldownTimerRef.current) {
-      clearTimeout(cooldownTimerRef.current);
-    }
+    if (isUpdatingState) return;
 
     const wordList = initialWordData[currentDifficulty] || [];
     if (wordList.length <= 1) return;
@@ -217,15 +205,9 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     } while (newWord === currentWord);
     
     updateTestState({ cur_word: newWord });
-
-    setIsTryAnotherCoolingDown(true);
-    
-    cooldownTimerRef.current = setTimeout(() => {
-      setIsTryAnotherCoolingDown(false);
-    }, 2000);
   };
 
-  const isProcessing = isAnalyzingRecording || isAdvancing || isUpdatingState;
+  const isProcessing = isAnalyzingRecording || isAdvancing;
 
   if (isLoadingProgress) {
     return <main className="main-content width-practice"><div className="spinner"></div> Loading test...</main>;
@@ -243,13 +225,13 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         <div className="practice-area">
           <p className="practice-text">{currentWord || '...'}</p>
           <div className="practice-controls">
-            <button className="practice-btn" onClick={() => setIsConfirmingSkip(true)} disabled={isProcessing || isRecording || diagnosisResult}>{t('initialTest.skip')}</button>
+            <button className="practice-btn" onClick={() => setIsConfirmingSkip(true)} disabled={isUpdatingState || isProcessing || isRecording || diagnosisResult}>{t('initialTest.skip')}</button>
             <button 
               className="practice-btn primary" 
               onClick={handleTryAnother} 
-              disabled={isTryAnotherCoolingDown || isProcessing || isRecording || diagnosisResult}
+              disabled={isUpdatingState || isProcessing || isRecording || diagnosisResult}
             >
-              {t('initialTest.tryAnother')}
+              {isUpdatingState ? t('initialTest.tryAnother') + "..." : t('initialTest.tryAnother')}
             </button>
           </div>
         </div>
@@ -265,13 +247,13 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         )}
       </main>
       <div className="audio-controls">
-        <button className={`record-btn ${isRecording ? 'recording' : ''}`} onClick={handleRecordToggle} disabled={isProcessing || diagnosisResult}>
+        <button className={`record-btn ${isRecording ? 'recording' : ''}`} onClick={handleRecordToggle} disabled={isUpdatingState || isProcessing || diagnosisResult}>
           {isRecording ? (
             <div className="record-timer">{formatTime(timer)}</div>
           ) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record' )}</span>
+              <span className="record-btn-text">{t('practicePage.record'  )}</span>
             </div>
           )}
         </button>
