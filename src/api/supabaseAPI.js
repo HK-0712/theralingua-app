@@ -145,12 +145,16 @@ export const postInitialTestResult = async (sessionData) => {
 /**
  * 標記初始測試已完成，更新 user_settings 表中的 sug_lvl。
  * @param {string} userId - 用戶 ID。
+ * @param {string} language - 練習語言。
  * @param {string} suggestedLevel - 根據測試結果建議的等級。
  * @returns {Promise<object>} - 更新後的 user_settings。
  */
-export const markTestAsCompleted = async (userId, suggestedLevel = 'Primary-School') => {
-    if (!userId) throw new Error('User ID is required.');
+export const markTestAsCompleted = async (userId, language, suggestedLevel = 'Primary-School') => {
+    if (!userId || !language) throw new Error('User ID and language are required.');
 
+    // 注意：這裡我們假設 sug_lvl 是存在 user_settings 表的。
+    // 如果您的設計是每個語言都有一個完成狀態，您可能需要調整數據庫結構。
+    // 根據您現有的結構，我們更新 user_settings。
     const { data, error } = await supabase
         .from('user_settings')
         .update({ sug_lvl: suggestedLevel })
@@ -179,19 +183,74 @@ export const getPracticeRecords = async (userId) => {
     if (!userId) throw new Error('User ID is required.');
 
     const { data, error } = await supabase
-      .from('profiles')
-      .select(`
-        id,
-        username,
-        settings:user_settings(*),
-        status:user_status(*)
-      `)
-      .eq('id', userId)
-      .single(); // 使用 .single() 來獲取單一物件而不是陣列
+      .from('practice_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
     if (error) {
         console.error('Error fetching practice records:', error);
         throw new Error(error.message);
     }
     return data;
+};
+
+
+// =================================================================
+// ==   初始測試狀態管理 API (InitialTest.jsx) - ✨ 新增部分 ✨     ==
+// =================================================================
+
+/**
+ * 獲取指定用戶和語言的初始測試狀態。
+ * @param {string} userId - 用戶 ID。
+ * @param {string} language - 練習語言 ('en', 'zh')。
+ * @returns {Promise<object>} - 包含當前進度的 user_status 對象。
+ */
+export const getInitialTestProgress = async (userId, language) => {
+  if (!userId || !language) throw new Error('User ID and language are required.');
+
+  const { data, error } = await supabase
+    .from('user_status')
+    .select('cur_lvl, cur_word, cur_log')
+    .eq('user_id', userId)
+    .eq('language', language)
+    .single();
+
+  if (error) {
+    // 如果因為沒有記錄而查詢失敗 (Supabase 的 .single() 特性)，返回一個預設的初始狀態
+    if (error.code === 'PGRST116') {
+      console.warn(`No initial test progress found for user ${userId} in language ${language}. Returning default.`);
+      return { cur_lvl: 'initial_test_0', cur_word: null, cur_log: null };
+    }
+    console.error('Error fetching initial test progress:', error);
+    throw new Error(error.message);
+  }
+
+  return data;
+};
+
+/**
+ * 更新用戶的初始測試進度。
+ * @param {string} userId - 用戶 ID。
+ * @param {string} language - 練習語言。
+ * @param {object} updates - 包含要更新的欄位的對象，例如 { cur_lvl, cur_word, cur_log }。
+ * @returns {Promise<object>} - 更新後的數據。
+ */
+export const updateInitialTestProgress = async (userId, language, updates) => {
+  if (!userId || !language || !updates) throw new Error('User ID, language, and updates are required.');
+
+  const { data, error } = await supabase
+    .from('user_status')
+    .update(updates)
+    .eq('user_id', userId)
+    .eq('language', language)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating initial test progress:', error);
+    throw new Error(error.message);
+  }
+
+  return data;
 };

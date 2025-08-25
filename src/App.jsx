@@ -65,6 +65,8 @@ function App() {
     return { ...profileData, email: session?.user?.email };
   }, [session, profileData]);
 
+  const practiceLanguage = combinedUserData?.settings?.language || 'en';
+
   useEffect(() => {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setShowPasswordReset(true);
@@ -132,7 +134,7 @@ function App() {
       <Route path="/profile" element={<PrivateRoute><MainLayout><Profile /></MainLayout></PrivateRoute>} />
       <Route path="/practice" element={<PrivateRoute><MainLayout><Practice practiceLanguage={combinedUserData?.settings?.language || 'en'} /></MainLayout></PrivateRoute>} />
       <Route path="/records" element={<PrivateRoute><MainLayout><Records /></MainLayout></PrivateRoute>} />
-      <Route path="/initial-test" element={<PrivateRoute><MainLayout>{hasCompletedTest ? <Navigate to={location.state?.from?.pathname || "/introduction"} replace /> : <InitialTest onTestComplete={onTestComplete} />}</MainLayout></PrivateRoute>} />
+      <Route path="/initial-test" element={<PrivateRoute><MainLayout>{hasCompletedTest ? <Navigate to={location.state?.from?.pathname || "/introduction"} replace /> : <InitialTest onTestComplete={onTestComplete} practiceLanguage={practiceLanguage} />}</MainLayout></PrivateRoute>} />
       <Route path="*" element={<p>Page Not Found</p>} />
     </Routes>
   );
