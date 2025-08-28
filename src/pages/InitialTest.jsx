@@ -190,12 +190,22 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         const records = await getPracticeRecords(userId);
         
         // ✨ 步驟 3: 過濾出初始測試的記錄並計算平均錯誤率
-        const initialTestRecords = records.filter(rec => rec.diffi_level === 'initial_test');
+        const initialTestRecords = records
+          .filter(rec => rec.diffi_level === 'initial_test')
+          // getPracticeRecords 已經按 created_at 降序排序，所以這裡無需再次排序
+          .slice(0, 20); // 只取最新的 20 條記錄
         
         let avgErrorRate = 0;
         if (initialTestRecords.length > 0) {
-          const totalErrorRate = initialTestRecords.reduce((sum, rec) => sum + (rec.error_rate || 0), 0);
-          avgErrorRate = (totalErrorRate / initialTestRecords.length) * 100; // 轉換為百分比
+          // ✨ 步驟 3b: 計算總錯誤率，同時處理大於 1 的情況
+          const totalErrorRate = initialTestRecords.reduce((sum, rec) => {
+            // 如果 error_rate 大於 1，則按 1 計算；否則按原值計算
+            const rate = (rec.error_rate || 0) > 1 ? 1 : (rec.error_rate || 0);
+            return sum + rate;
+          }, 0);
+          
+          // ✨ 步驟 3c: 計算平均值並轉換為百分比
+          avgErrorRate = (totalErrorRate / initialTestRecords.length) * 100;
         }
 
         // ✨ 步驟 4: 根據您提供的規則決定推薦等級
@@ -208,8 +218,11 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
           suggestedLevel = 'Primary-School';
         }
         
-        // ✨ 步驟 5: 將計算出的等級傳遞給後端
+        // ✨ 步驟 5: 將計算出的等級傳遞給後端以設定 sug_lvl
         await markTestAsCompleted(userId, practiceLanguage, suggestedLevel);
+        
+        // ✨ 步驟 6: 新增 - 立即將 user_status 中的 cur_lvl 也更新為建議等級
+        await updateInitialTestProgress(userId, practiceLanguage, { cur_lvl: suggestedLevel });
         
         return { isCompleted: true };
 
