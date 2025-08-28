@@ -1,13 +1,12 @@
-// supabase/functions/analyze-speech/index.ts (The Final, Syntax-Corrected Version)
+// supabase/functions/analyze-speech/index.ts (The Final, Output-Formatted Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 // ==============================================================================
-// 步驟 1: 核心資源與輔助函數 (TypeScript 移植版 )
+// 步驟 1: 核心資源與輔助函數 (大部分保持不變 )
 // ==============================================================================
 
-// 音標列表 (從 Python 移植)
 const CMUDICT_PHONEMES: string[] = [
     'p', 'b', 't', 'd', 'k', 'g', 'f', 'v', 'θ', 'ð', 's', 'z', 'ʃ', 'ʒ', 'h',
     'tʃ', 'dʒ', 'm', 'n', 'ŋ', 'l', 'r', 'w', 'j', 'i', 'ɪ', 'ɛ', 'æ', 'u',
@@ -18,9 +17,7 @@ const SORTED_CMUDICT_PHONEMES = [...CMUDICT_PHONEMES].sort((a, b) => b.length - 
 function cleanIpaString(ipaString: string): string {
     if (!ipaString) return '';
     return ipaString.replace(/ɡ/g, 'g').replace(/ɫ/g, 'l').replace(/ɹ/g, 'r')
-                    .replace(/[ˈˌː]/g, "")
-                    .replace(/[\/\[\]()]/g, '')
-                    .trim();
+                    .replace(/[ˈˌː]/g, "").replace(/[\/\[\]()]/g, '').trim();
 }
 
 function segmentIpa(ipaString: string): string[] {
@@ -32,9 +29,7 @@ function segmentIpa(ipaString: string): string[] {
         if (match) {
             phonemes.push(match);
             i += match.length;
-        } else {
-            i += 1;
-        }
+        } else { i += 1; }
     }
     return phonemes;
 }
@@ -45,24 +40,15 @@ interface AlignmentError {
     actual: string | null;
 }
 
-// ✨✨✨ 唯一的語法修正發生在這個函數中 ✨✨✨
 function alignAndFindErrors(targetPhonemes: string[], actualPhonemes: string[]): {
-    errors: AlignmentError[],
-    errorCount: number,
-    alignedTarget: string[],
-    alignedActual: string[]
+    errors: AlignmentError[], errorCount: number, alignedTarget: string[], alignedActual: string[]
 } {
     const substitutionCost = 1, indelCost = 1;
     const n = targetPhonemes.length, m = actualPhonemes.length;
-    
-    // 定義 DP 表格元素的類型
     type DP_Cell = { cost: number, dir: 'diag' | 'left' | 'up' | '' };
-    
     const dp: DP_Cell[][] = Array(n + 1).fill(null).map(() => Array(m + 1).fill({ cost: 0, dir: '' }));
-
     for (let i = 1; i <= n; i++) dp[i][0] = { cost: i * indelCost, dir: 'up' };
     for (let j = 1; j <= m; j++) dp[0][j] = { cost: j * indelCost, dir: 'left' };
-
     for (let i = 1; i <= n; i++) {
         for (let j = 1; j <= m; j++) {
             const cost = targetPhonemes[i - 1] === actualPhonemes[j - 1] ? 0 : substitutionCost;
@@ -71,57 +57,51 @@ function alignAndFindErrors(targetPhonemes: string[], actualPhonemes: string[]):
                 { cost: dp[i][j - 1].cost + indelCost, dir: 'left' as const },
                 { cost: dp[i - 1][j].cost + indelCost, dir: 'up' as const }
             ];
-            // 修正 reduce 的用法，為其提供一個初始值
             dp[i][j] = scores.reduce((min, s) => s.cost < min.cost ? s : min, scores[0]);
         }
     }
-
     const errors: AlignmentError[] = [];
     const alignedTarget: string[] = [];
     const alignedActual: string[] = [];
     let i = n, j = m;
-
     while (i > 0 || j > 0) {
         const direction = dp[i][j].dir;
         if (direction === 'diag') {
             const targetPhoneme = targetPhonemes[i - 1];
             const actualPhoneme = actualPhonemes[j - 1];
-            alignedTarget.push(targetPhoneme);
-            alignedActual.push(actualPhoneme);
-            if (targetPhoneme !== actualPhoneme) {
-                errors.push({ type: 'Substitution', target: targetPhoneme, actual: actualPhoneme });
-            }
+            alignedTarget.push(targetPhoneme); alignedActual.push(actualPhoneme);
+            if (targetPhoneme !== actualPhoneme) errors.push({ type: 'Substitution', target: targetPhoneme, actual: actualPhoneme });
             i--; j--;
         } else if (direction === 'up') {
-            alignedTarget.push(targetPhonemes[i - 1]);
-            alignedActual.push('-');
+            alignedTarget.push(targetPhonemes[i - 1]); alignedActual.push('-');
             errors.push({ type: 'Deletion', target: targetPhonemes[i - 1], actual: null });
             i--;
-        } else { // 'left'
-            alignedTarget.push('-');
-            alignedActual.push(actualPhonemes[j - 1]);
+        } else {
+            alignedTarget.push('-'); alignedActual.push(actualPhonemes[j - 1]);
             errors.push({ type: 'Insertion', target: null, actual: actualPhonemes[j - 1] });
             j--;
         }
     }
-    
-    return {
-        errors: errors.reverse(),
-        errorCount: errors.length,
-        alignedTarget: alignedTarget.reverse(),
-        alignedActual: alignedActual.reverse()
-    };
+    return { errors: errors.reverse(), errorCount: errors.length, alignedTarget: alignedTarget.reverse(), alignedActual: alignedActual.reverse() };
+}
+
+// ✨✨✨ 新增的輔助函數，用來格式化最終的錯誤列表 ✨✨✨
+function getErrorPhonemes(errors: AlignmentError[]): string[] {
+    const errorPhonemes = errors
+        .filter(err => (err.type === 'Substitution' || err.type === 'Deletion') && err.target)
+        .map(err => err.target!); // 使用 '!' 斷言 err.target 在這裡一定存在
+    // 返回去重後的排序列表
+    return [...new Set(errorPhonemes)].sort();
 }
 
 // ==============================================================================
-// 步驟 2: 主服務函數 (保持不變)
+// 步驟 2: 主服務函數
 // ==============================================================================
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
-
   try {
     const formData = await req.formData();
     const audioFile = formData.get('audio');
@@ -163,6 +143,7 @@ Deno.serve(async (req) => {
     
     const { errors, errorCount, alignedTarget, alignedActual } = alignAndFindErrors(targetPhonemes, userPhonemes);
 
+    // ✨✨✨ 唯一的邏輯變更：調用新函數來格式化 error_summary ✨✨✨
     const finalResult = {
         target_word: asrResult.target_word,
         possible_ipa: [asrResult.target_ipa],
@@ -172,14 +153,13 @@ Deno.serve(async (req) => {
         aligned_user: alignedActual,
         error_count: errorCount,
         phoneme_count: targetPhonemes.length,
-        error_summary: errors
+        error_summary: getErrorPhonemes(errors) // <--- 在這裡使用新函數
     };
 
     return new Response(
       JSON.stringify(finalResult),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
   } catch (error) {
     console.error('Edge Function Internal Error:', error);
     return new Response(
