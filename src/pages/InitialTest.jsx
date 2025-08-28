@@ -3,6 +3,7 @@ import { useSession } from '@supabase/auth-helpers-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useReactMediaRecorder } from 'react-media-recorder';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 import { supabase } from '../supabaseClient';
 import { 
@@ -17,7 +18,7 @@ import '../styles/Practice.css';
 import '../styles/Layout.css';
 import '../styles/InitialTest.css';
 
-// --- 輔助函數和靜態元件 ---
+// --- 輔助函數和靜態元件 (保持不變) ---
 const difficultyLevels = ['Kindergarten', 'Primary-School', 'Secondary-School', 'Adult'];
 const totalCount = 20;
 
@@ -60,14 +61,12 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const queryClient = useQueryClient();
   const userId = session?.user?.id;
   
-  // 恢復您自己的 isRecording 和 timer state，以確保 UI 的完全控制權
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
   const [diagnosisResult, setDiagnosisResult] = useState(null);
   const [mediaError, setMediaError] = useState(null);
 
-  // 設置 useReactMediaRecorder，但這次我們主要用它的控制函數
   const {
     status,
     startRecording,
@@ -77,7 +76,11 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     audio: true,
     blobPropertyBag: { type: 'audio/mp3' },
     onStop: (blobUrl, blob) => {
-      analyzeRecording(blob);
+      analyzeRecording({ 
+        audioBlob: blob, 
+        word: currentWord, 
+        lang: practiceLanguage 
+      });
     }
   });
 
@@ -161,21 +164,39 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   });
 
   const { mutate: analyzeRecording, isPending: isAnalyzingRecording } = useMutation({
-    mutationFn: async (audioBlob) => {
-      if (!audioBlob) throw new Error("Audio data is missing.");
+    mutationFn: async ({ audioBlob, word, lang }) => {
+      // 前端驗證
+      if (!audioBlob || !word || !lang || audioBlob.size === 0) {
+        throw new Error(`[FRONTEND CHECK FAILED] Cannot analyze. Details: audioBlob size=${audioBlob?.size}, word=${word}, lang=${lang}`);
+      }
+      
+      // 1. 創建標準的 FormData
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.mp3');
-      formData.append('target_word', currentWord);
-      const { data, error } = await supabase.functions.invoke('analyze-speech', { body: formData });
-      if (error) throw error;
+      formData.append('target_word', word);
+      formData.append('language', lang);
+
+      // 2. 直接將 FormData 作為 body 傳遞 (最簡潔且官方推薦的方式)
+      const { data, error } = await supabase.functions.invoke('analyze-speech', {
+        body: formData,
+      });
+
+      // 3. 保持增強的錯誤處理
+      if (error) {
+        if (error instanceof FunctionsHttpError) {
+          const errorJson = await error.context.json();
+          throw new Error(`Analysis failed: ${errorJson.error || error.message}`);
+        }
+        throw error;
+      }
       return data;
     },
     onSuccess: (data) => {
       setDiagnosisResult(data);
     },
     onError: (error) => {
-      console.error("Analysis failed:", error);
-      alert(`Error during analysis: ${error.message}`);
+      console.error("Analysis mutation failed:", error);
+      alert(error.message);
       clearBlobUrl();
     },
   });
@@ -190,7 +211,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     }
   }, [testProgress, isUpdatingState, isAdvancing, updateTestState]);
 
-  // 恢復您的計時器 useEffect，讓它由您的 isRecording state 控制
   useEffect(() => {
     let intervalId;
     if (isRecording) {
@@ -199,14 +219,12 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     return () => clearInterval(intervalId);
   }, [isRecording]);
 
-  // 新增一個 useEffect 來監控錄音庫的狀態，並同步到您的 isRecording state
   useEffect(() => {
     if (status === 'recording') {
       setIsRecording(true);
-      setMediaError(null); // 清除舊的錯誤
+      setMediaError(null);
     }
     if (status === 'error') {
-      // 如果錄音庫出錯 (例如用戶拒絕權限)，我們重置狀態
       setMediaError('Could not access the microphone. Please check your browser permissions.');
       setIsRecording(false);
     }
@@ -220,14 +238,13 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
 
   const handleRecordToggle = () => {
     if (isRecording) {
-      stopRecording(); // 這會將 status 變為 'stopped'，並觸發 onStop
+      stopRecording();
     } else {
-      // 重置所有狀態，準備開始新的錄音
       setMediaError(null);
       clearBlobUrl();
       setDiagnosisResult(null);
       setTimer(0);
-      startRecording(); // 這會將 status 變為 'acquiring_media'，然後是 'recording'
+      startRecording();
     }
   };
 
@@ -284,7 +301,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
           </div>
         </div>
 
-        {/* 新增一個區域來顯示麥克風錯誤或權限提示 */}
         {mediaError && <div className="media-error-alert">{mediaError}</div>}
         {status === 'acquiring_media' && <div className="media-info-alert">Please allow microphone access in your browser...</div>}
 
@@ -300,19 +316,17 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         )}
       </main>
       <div className="audio-controls">
-        {/* 錄音按鈕的 className 現在由您自己的 isRecording state 控制，確保動畫正確 */}
         <button 
           className={`record-btn ${isRecording ? 'recording' : ''}`} 
           onClick={handleRecordToggle} 
           disabled={isUpdatingState || isProcessing || !!diagnosisResult || status === 'acquiring_media'}
         >
           {isRecording ? (
-            // 恢復您原有的計時器顯示
             <div className="record-timer">{formatTime(timer)}</div>
           ) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record' )}</span>
+              <span className="record-btn-text">{t('practicePage.record'    )}</span>
             </div>
           )}
         </button>
