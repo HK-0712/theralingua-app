@@ -64,7 +64,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
-  const [diagnosisResult, setDiagnosisResult] = useState(null);
   const [mediaError, setMediaError] = useState(null);
 
   const {
@@ -101,6 +100,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
 
   const currentWord = useMemo(() => testProgress?.cur_word, [testProgress]);
   const currentDifficulty = useMemo(() => getDifficultyLevel(progressCount), [progressCount]);
+  const hasDiagnosisLog = useMemo(() => !!testProgress?.cur_log, [testProgress]);
 
   const { mutate: updateTestState, isPending: isUpdatingState } = useMutation({
     mutationFn: async (updates) => {
@@ -131,8 +131,8 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         user_id: userId,
         language: practiceLanguage,
         target_word: currentWord,
-        error_rate: isSkip ? 1.0 : ((diagnosisResult?.error_count ?? 1) / (diagnosisResult?.phoneme_count ?? 1)),
-        full_log: isSkip ? JSON.stringify({ status: 'skipped' }) : JSON.stringify(diagnosisResult),
+        error_rate: isSkip ? 1.0 : ((JSON.parse(testProgress?.cur_log || '{}')?.error_count ?? 1) / (JSON.parse(testProgress?.cur_log || '{}')?.phoneme_count ?? 1)),
+        full_log: isSkip ? JSON.stringify({ status: 'skipped' }) : testProgress?.cur_log,
       };
       await postInitialTestResult(sessionData);
 
@@ -156,7 +156,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         onTestComplete();
       } else {
         queryClient.invalidateQueries({ queryKey: queryKey });
-        setDiagnosisResult(null);
         clearBlobUrl();
       }
     },
@@ -192,7 +191,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
       return data;
     },
     onSuccess: (data) => {
-      setDiagnosisResult(data);
+      queryClient.invalidateQueries({ queryKey: queryKey });
     },
     onError: (error) => {
       console.error("Analysis mutation failed:", error);
@@ -242,7 +241,6 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     } else {
       setMediaError(null);
       clearBlobUrl();
-      setDiagnosisResult(null);
       setTimer(0);
       startRecording();
     }
@@ -290,11 +288,11 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         <div className="practice-area">
           <p className="practice-text">{currentWord || '...'}</p>
           <div className="practice-controls">
-            <button className="practice-btn" onClick={() => setIsConfirmingSkip(true)} disabled={isUpdatingState || isProcessing || isRecording || diagnosisResult}>{t('initialTest.skip')}</button>
+            <button className="practice-btn" onClick={() => setIsConfirmingSkip(true)} disabled={isUpdatingState || isProcessing || isRecording || hasDiagnosisLog}>{t('initialTest.skip')}</button>
             <button 
               className="practice-btn primary" 
               onClick={handleTryAnother} 
-              disabled={isUpdatingState || isProcessing || isRecording || diagnosisResult}
+              disabled={isUpdatingState || isProcessing || isRecording || hasDiagnosisLog}
             >
               {isUpdatingState ? t('initialTest.coolingDown', 'Cooling Down...') : t('initialTest.tryAnother')}
             </button>
@@ -304,9 +302,9 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         {mediaError && <div className="media-error-alert">{mediaError}</div>}
         {status === 'acquiring_media' && <div className="media-info-alert">Please allow microphone access in your browser...</div>}
 
-        {diagnosisResult && (
+        {hasDiagnosisLog && (
           <div className="diagnosis-container" style={{ display: 'block' }}>
-            <DiagnosisOutput result={diagnosisResult} />
+            <pre>{testProgress.cur_log}</pre>
             <div className="next-btn-wrapper">
               <button className="practice-btn primary" onClick={handleNextWord} disabled={isAdvancing}>
                 {isAdvancing ? 'Saving...' : `${t('practicePage.next')} →`}
@@ -316,11 +314,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         )}
       </main>
       <div className="audio-controls">
-        <button 
-          className={`record-btn ${isRecording ? 'recording' : ''}`} 
-          onClick={handleRecordToggle} 
-          disabled={isUpdatingState || isProcessing || !!diagnosisResult || status === 'acquiring_media'}
-        >
+        <button className={`record-btn ${isRecording ? 'recording' : ''}`} onClick={handleRecordToggle} disabled={isUpdatingState || isProcessing || hasDiagnosisLog || status === 'acquiring_media'}>
           {isRecording ? (
             <div className="record-timer">{formatTime(timer)}</div>
           ) : (
