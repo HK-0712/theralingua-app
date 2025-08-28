@@ -10,7 +10,9 @@ import {
   postInitialTestResult, 
   markTestAsCompleted,
   getInitialTestProgress,
-  updateInitialTestProgress
+  updateInitialTestProgress,
+  // ✨ 步驟 1: 引入 getPracticeRecords API
+  getPracticeRecords 
 } from '../api/supabaseAPI'; 
 import ConfirmDialog from '../components/ConfirmDialog';
 import initialWordData from '../data/initial-test-words.json'; 
@@ -34,6 +36,7 @@ const getNextTestWord = (progressCount) => {
   return wordList[Math.floor(Math.random() * wordList.length)];
 };
 
+// ... DiagnosisOutput 元件保持不變 ...
 const DiagnosisOutput = ({ result }) => {
   if (!result) return null;
   return (
@@ -53,7 +56,7 @@ const DiagnosisOutput = ({ result }) => {
 
 
 // =================================================================
-// ==   InitialTest 組件 (已修復錯誤統計邏輯)                      ==
+// ==   InitialTest 組件 (已加入智慧推薦等級功能)                  ==
 // =================================================================
 export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const { t } = useTranslation();
@@ -61,6 +64,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const queryClient = useQueryClient();
   const userId = session?.user?.id;
   
+  // ... 所有 state 和 useReactMediaRecorder hook 保持不變 ...
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isConfirmingSkip, setIsConfirmingSkip] = useState(false);
@@ -85,6 +89,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
 
   const queryKey = ['initialTestProgress', userId, practiceLanguage];
 
+  // ... useQuery 和 useMemo hooks 保持不變 ...
   const { data: testProgress, isLoading: isLoadingProgress, isError } = useQuery({
     queryKey: queryKey,
     queryFn: () => getInitialTestProgress(userId, practiceLanguage),
@@ -102,6 +107,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const currentDifficulty = useMemo(() => getDifficultyLevel(progressCount), [progressCount]);
   const hasDiagnosisLog = useMemo(() => !!testProgress?.cur_log, [testProgress]);
 
+  // ... updateTestState mutation 保持不變 ...
   const { mutate: updateTestState, isPending: isUpdatingState } = useMutation({
     mutationFn: async (updates) => {
       const updatePromise = updateInitialTestProgress(userId, practiceLanguage, updates);
@@ -126,71 +132,44 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
 
   const { mutate: advanceToNextWord, isPending: isAdvancing } = useMutation({
     mutationFn: async ({ isSkip = false }) => {
-      // 這是您原始程式碼中，我移到這裡的變數定義
       let errorCount = 0;
-      let phonemeCount = 1; // 避免除以零
+      let phonemeCount = 1;
 
-      // 只有在不是跳過的情況下，才更新音素統計
       if (!isSkip && testProgress?.cur_log) {
-        
-        // =================================================================
-        // == ✨✨✨ 核心錯誤修復 ✨✨✨
-        // == 我們將直接比較 cur_log 中對齊的音標，這是最準確的方法
-        // =================================================================
-
-        // 1. 從日誌中精確解析出對齊的目標音標和用戶音標
+        // ... 錯誤統計邏輯保持不變 ...
         const alignedTargetText = testProgress.cur_log.match(/Target: \[ (.*) \]/)?.[1];
         const alignedUserText = testProgress.cur_log.match(/User  : \[ (.*) \]/)?.[1];
-
-        // 2. 將它們轉換為陣列
         const targetPhonemes = alignedTargetText ? alignedTargetText.trim().split(/\s+/) : [];
         const userPhonemes = alignedUserText ? alignedUserText.trim().split(/\s+/) : [];
-
         const phonemeStats = {};
-
-        // 3. 進行一對一比較來統計嘗試和錯誤次數
         if (targetPhonemes.length === userPhonemes.length) {
           for (let i = 0; i < targetPhonemes.length; i++) {
             const targetPhoneme = targetPhonemes[i];
-            
-            // 我們只統計有效的目標音素 (忽略插入錯誤的 '-')
             if (targetPhoneme !== '-') {
-              // 初始化統計物件
               if (!phonemeStats[targetPhoneme]) {
                 phonemeStats[targetPhoneme] = { total_atmp: 0, err_amount: 0 };
               }
-              
-              // 總嘗試次數 +1
               phonemeStats[targetPhoneme].total_atmp += 1;
-              
-              // 如果目標音標和用戶音標在同一個位置上不匹配，則錯誤次數 +1
               if (targetPhoneme !== userPhonemes[i]) {
                 phonemeStats[targetPhoneme].err_amount += 1;
               }
             }
           }
         }
-        
-        // 4. 將計算好的、準確的統計數據傳遞給後端 RPC 函數
         const { error: rpcError } = await supabase.rpc('update_phoneme_summary_from_stats', {
           p_user_id: userId,
           p_language: practiceLanguage,
           p_stats: phonemeStats
         });
-
         if (rpcError) {
           console.error('Failed to update phoneme summary:', rpcError);
         }
-
-        // 同時，為了 practice_sessions 表，我們也從日誌中解析出總錯誤數和音素數
         const errorMatch = testProgress.cur_log.match(/Found (\d+) error\(s\) in a (\d+)-phoneme word/);
         if (errorMatch) {
             errorCount = parseInt(errorMatch[1], 10);
-            phonemeCount = parseInt(errorMatch[2], 10) || 1; // 確保不為 0
+            phonemeCount = parseInt(errorMatch[2], 10) || 1;
         }
       }
-
-      // --- 以下邏輯保持不變 ---
 
       const newProgressCount = progressCount + 1;
 
@@ -203,10 +182,39 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
       };
       await postInitialTestResult(sessionData);
 
+      // =================================================================
+      // == ✨✨✨ 核心修改：智慧推薦等級邏輯 ✨✨✨
+      // =================================================================
       if (newProgressCount > totalCount) {
-        await markTestAsCompleted(userId, practiceLanguage);
+        // ✨ 步驟 2: 獲取該用戶的所有練習記錄
+        const records = await getPracticeRecords(userId);
+        
+        // ✨ 步驟 3: 過濾出初始測試的記錄並計算平均錯誤率
+        const initialTestRecords = records.filter(rec => rec.diffi_level === 'initial_test');
+        
+        let avgErrorRate = 0;
+        if (initialTestRecords.length > 0) {
+          const totalErrorRate = initialTestRecords.reduce((sum, rec) => sum + (rec.error_rate || 0), 0);
+          avgErrorRate = (totalErrorRate / initialTestRecords.length) * 100; // 轉換為百分比
+        }
+
+        // ✨ 步驟 4: 根據您提供的規則決定推薦等級
+        let suggestedLevel = 'Kindergarten'; // 預設值
+        if (avgErrorRate < 25) {
+          suggestedLevel = 'Adult';
+        } else if (avgErrorRate < 50) {
+          suggestedLevel = 'Secondary-School';
+        } else if (avgErrorRate < 75) {
+          suggestedLevel = 'Primary-School';
+        }
+        
+        // ✨ 步驟 5: 將計算出的等級傳遞給後端
+        await markTestAsCompleted(userId, practiceLanguage, suggestedLevel);
+        
         return { isCompleted: true };
+
       } else {
+        // --- 以下邏輯保持不變 ---
         const nextWord = getNextTestWord(newProgressCount);
         const updates = {
           cur_lvl: `initial_test_${newProgressCount}`,
@@ -230,6 +238,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     onError: (error) => console.error("Failed to advance to next word:", error),
   });
 
+  // ... analyzeRecording mutation 保持不變 ...
   const { mutate: analyzeRecording, isPending: isAnalyzingRecording } = useMutation({
     mutationFn: async ({ audioBlob, word, lang }) => {
       if (!audioBlob || !word || !lang || audioBlob.size === 0) {
@@ -263,6 +272,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     },
   });
 
+  // ... 所有的 useEffect, 事件處理函數, 和 JSX 渲染部分都保持不變 ...
   useEffect(() => {
     if (testProgress && !testProgress.cur_word && !isUpdatingState && !isAdvancing) {
       const firstWord = getNextTestWord(1);
