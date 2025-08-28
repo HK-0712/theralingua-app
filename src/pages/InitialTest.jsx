@@ -42,7 +42,7 @@ const DiagnosisOutput = ({ result }) => {
   - Target: '${result.target_word || 'N/A'}', Possible IPAs: ${JSON.stringify(result.possible_ipa || [])}
   - User Input: ${result.user_ipa || 'N/A'}
   - Best Match: '${result.best_match_ipa || 'N/A'}'
-  【Phoneme Alignment】
+【Phoneme Alignment】
   Target: [ ${result.aligned_target?.join(' ') || ''} ]
   User  : [ ${result.aligned_user?.join(' ') || ''} ]
   - Diagnosis Complete: Found ${result.error_count || 0} error(s) in a ${result.phoneme_count || 0}-phoneme word.
@@ -53,7 +53,7 @@ const DiagnosisOutput = ({ result }) => {
 
 
 // =================================================================
-// ==   InitialTest 組件 (最終穩健版)                             ==
+// ==   InitialTest 組件 (已修復錯誤統計邏輯)                      ==
 // =================================================================
 export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const { t } = useTranslation();
@@ -126,27 +126,79 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
 
   const { mutate: advanceToNextWord, isPending: isAdvancing } = useMutation({
     mutationFn: async ({ isSkip = false }) => {
-      const newProgressCount = progressCount + 1;
-
+      // 這是您原始程式碼中，我移到這裡的變數定義
       let errorCount = 0;
       let phonemeCount = 1; // 避免除以零
 
+      // 只有在不是跳過的情況下，才更新音素統計
       if (!isSkip && testProgress?.cur_log) {
-        // 使用正規表示式從日誌字串中安全地提取數字，避免 JSON 解析錯誤
-        const errorMatch = testProgress.cur_log.match(/Found (\d+) error/);
-        const phonemeMatch = testProgress.cur_log.match(/in a (\d+)-phoneme/);
         
-        if (errorMatch) errorCount = parseInt(errorMatch[1], 10);
-        if (phonemeMatch) phonemeCount = parseInt(phonemeMatch[1], 10) || 1;
+        // =================================================================
+        // == ✨✨✨ 核心錯誤修復 ✨✨✨
+        // == 我們將直接比較 cur_log 中對齊的音標，這是最準確的方法
+        // =================================================================
+
+        // 1. 從日誌中精確解析出對齊的目標音標和用戶音標
+        const alignedTargetText = testProgress.cur_log.match(/Target: \[ (.*) \]/)?.[1];
+        const alignedUserText = testProgress.cur_log.match(/User  : \[ (.*) \]/)?.[1];
+
+        // 2. 將它們轉換為陣列
+        const targetPhonemes = alignedTargetText ? alignedTargetText.trim().split(/\s+/) : [];
+        const userPhonemes = alignedUserText ? alignedUserText.trim().split(/\s+/) : [];
+
+        const phonemeStats = {};
+
+        // 3. 進行一對一比較來統計嘗試和錯誤次數
+        if (targetPhonemes.length === userPhonemes.length) {
+          for (let i = 0; i < targetPhonemes.length; i++) {
+            const targetPhoneme = targetPhonemes[i];
+            
+            // 我們只統計有效的目標音素 (忽略插入錯誤的 '-')
+            if (targetPhoneme !== '-') {
+              // 初始化統計物件
+              if (!phonemeStats[targetPhoneme]) {
+                phonemeStats[targetPhoneme] = { total_atmp: 0, err_amount: 0 };
+              }
+              
+              // 總嘗試次數 +1
+              phonemeStats[targetPhoneme].total_atmp += 1;
+              
+              // 如果目標音標和用戶音標在同一個位置上不匹配，則錯誤次數 +1
+              if (targetPhoneme !== userPhonemes[i]) {
+                phonemeStats[targetPhoneme].err_amount += 1;
+              }
+            }
+          }
+        }
+        
+        // 4. 將計算好的、準確的統計數據傳遞給後端 RPC 函數
+        const { error: rpcError } = await supabase.rpc('update_phoneme_summary_from_stats', {
+          p_user_id: userId,
+          p_language: practiceLanguage,
+          p_stats: phonemeStats
+        });
+
+        if (rpcError) {
+          console.error('Failed to update phoneme summary:', rpcError);
+        }
+
+        // 同時，為了 practice_sessions 表，我們也從日誌中解析出總錯誤數和音素數
+        const errorMatch = testProgress.cur_log.match(/Found (\d+) error\(s\) in a (\d+)-phoneme word/);
+        if (errorMatch) {
+            errorCount = parseInt(errorMatch[1], 10);
+            phonemeCount = parseInt(errorMatch[2], 10) || 1; // 確保不為 0
+        }
       }
+
+      // --- 以下邏輯保持不變 ---
+
+      const newProgressCount = progressCount + 1;
 
       const sessionData = {
         user_id: userId,
         language: practiceLanguage,
         target_word: currentWord,
-        // 如果是跳過，錯誤率為 1.0；否則，根據提取的數字計算
         error_rate: isSkip ? 1.0 : (errorCount / phonemeCount),
-        // 如果是跳過，儲存一個標記；否則，直接儲存從資料庫讀取的文字日誌
         full_log: isSkip ? JSON.stringify({ status: 'skipped' }) : testProgress?.cur_log,
       };
       await postInitialTestResult(sessionData);
@@ -160,6 +212,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
           cur_lvl: `initial_test_${newProgressCount}`,
           cur_word: nextWord,
           cur_log: null,
+          cur_err: null,
         };
         await updateInitialTestProgress(userId, practiceLanguage, updates);
         return { isCompleted: false };
@@ -179,23 +232,19 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
 
   const { mutate: analyzeRecording, isPending: isAnalyzingRecording } = useMutation({
     mutationFn: async ({ audioBlob, word, lang }) => {
-      // 前端驗證
       if (!audioBlob || !word || !lang || audioBlob.size === 0) {
         throw new Error(`[FRONTEND CHECK FAILED] Cannot analyze. Details: audioBlob size=${audioBlob?.size}, word=${word}, lang=${lang}`);
       }
       
-      // 1. 創建標準的 FormData
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.mp3');
       formData.append('target_word', word);
       formData.append('language', lang);
 
-      // 2. 直接將 FormData 作為 body 傳遞 (最簡潔且官方推薦的方式)
       const { data, error } = await supabase.functions.invoke('analyze-speech', {
         body: formData,
       });
 
-      // 3. 保持增強的錯誤處理
       if (error) {
         if (error instanceof FunctionsHttpError) {
           const errorJson = await error.context.json();
@@ -203,9 +252,8 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         }
         throw error;
       }
-      return data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKey });
     },
     onError: (error) => {
@@ -335,7 +383,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
           ) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record'    )}</span>
+              <span className="record-btn-text">{t('practicePage.record'     )}</span>
             </div>
           )}
         </button>
