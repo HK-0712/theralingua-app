@@ -1,9 +1,10 @@
-// src/pages/Practice.jsx (React Query Refactored Version)
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSession, useSupabaseClient } from '@supabase/auth-helpers-react';
-import { useMutation } from '@tanstack/react-query';
+// ✨ 步驟 1: 引入 useQuery 和 useQueryClient
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+// ✨ 步驟 2: 引入我們需要的 API 函數
+import { updateInitialTestProgress as updateUserStatus } from '../api/supabaseAPI';
 
 import '../styles/Practice.css';
 import '../styles/Layout.css';
@@ -11,7 +12,6 @@ import '../styles/Layout.css';
 // --- 靜態組件 (保持不變) ---
 const DiagnosisOutput = ({ result, lang }) => {
   if (!result) return null;
-  // 為了簡潔，這裡使用一個簡化的版本，你可以用回原來的詳細版本
   return (
     <pre>
       {`【Diagnosis Layer】
@@ -27,41 +27,59 @@ const DiagnosisOutput = ({ result, lang }) => {
 };
 
 // =================================================================
-// ==   Practice 組件                                             ==
+// ==   Practice 組件 (動態等級版)                                ==
 // =================================================================
 
-export default function Practice({ practiceLanguage }) {
+// ✨ 步驟 3: 修改 props，接收 userStatus
+export default function Practice({ practiceLanguage, userStatus }) {
   const { t } = useTranslation();
   const session = useSession();
   const supabaseClient = useSupabaseClient();
+  const queryClient = useQueryClient(); // 獲取 queryClient 實例
   const userId = session?.user?.id;
 
-  // --- 本地 UI 狀態 ---
-  const [currentDifficulty, setCurrentDifficulty] = useState('kindergarten');
+  // ✨ 步驟 4: 使用從 props 傳來的 cur_lvl 初始化本地狀態
+  // 如果 userStatus.cur_lvl 存在，就用它；否則，預設為 'Primary-School'
+  const [currentDifficulty, setCurrentDifficulty] = useState(
+    userStatus?.cur_lvl || 'Primary-School'
+  );
+
+  // --- 其他本地 UI 狀態 (保持不變) ---
   const [currentWord, setCurrentWord] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [diagnosis, setDiagnosis] = useState(null);
   const [generatedWords, setGeneratedWords] = useState([]);
 
-  // --- 模擬的初始單詞列表 (真實應用中可以從 API 獲取) ---
   const initialWordListEN = useMemo(() => ["rabbit", "sun", "star", "window", "practice"], []);
   const initialWordListZH = useMemo(() => ["兔子", "太陽", "星星", "上班", "練習"], []);
 
-  // ✨ 核心變更 1: 使用 useMutation 處理語音診斷和日誌記錄
+  // ✨ 步驟 5: 創建一個 useMutation 來處理等級更新
+  const { mutate: updateDifficulty } = useMutation({
+    mutationFn: (newLevel) => 
+      updateUserStatus(userId, practiceLanguage, { cur_lvl: newLevel }),
+    onSuccess: () => {
+      // 成功更新後，讓 user query 失效，以確保 App.jsx 能獲取最新狀態
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+    },
+    onError: (error) => {
+      console.error("Failed to update difficulty level:", error);
+    }
+  });
+
+  // ✨ 步驟 6: 創建一個處理點擊事件的函數
+  const handleDifficultyChange = (level) => {
+    // 立即更新 UI，提供即時反饋
+    setCurrentDifficulty(level);
+    // 異步更新後端資料庫
+    updateDifficulty(level);
+  };
+
+  // diagnoseSpeech mutation (保持不變)
   const { mutate: diagnoseSpeech, isPending: isAnalyzing } = useMutation({
-    // mutationFn 是執行的核心函數
     mutationFn: async () => {
-      // --- 步驟 1: 調用 Supabase Edge Function 進行語音分析 ---
-      // 這是假設的步驟，你需要替換為你自己的 Edge Function 名稱和參數
-      // const { data: analysisResult, error: functionError } = await supabaseClient.functions.invoke('analyze-speech', {
-      //   body: { audioBlob: '...', targetWord: currentWord, language: practiceLanguage },
-      // });
-      // if (functionError) throw functionError;
-      
-      // --- 為了演示，我們在這裡使用模擬的分析結果 ---
       console.log("Simulating call to a Supabase Edge Function for analysis...");
-      await new Promise(res => setTimeout(res, 1500)); // 模擬網絡延遲
+      await new Promise(res => setTimeout(res, 1500));
       const mockAnalysisResult = {
           errorRate: 0.4,
           errorSummary: ['n', 'd'],
@@ -69,43 +87,32 @@ export default function Practice({ practiceLanguage }) {
           action: "Generating practice for sounds: ['n', 'd']",
           generatedWords: ["window", "wonderful", "winter", "wind", "wander"],
       };
-      // --- 模擬結束 ---
-
-      // --- 步驟 2: 將診斷結果記錄到數據庫 ---
       const logPayload = {
         user_id: userId,
         language: practiceLanguage,
         target_word: currentWord,
         diffi_level: currentDifficulty,
         error_rate: mockAnalysisResult.errorRate,
-        full_log: JSON.stringify(mockAnalysisResult), // 將詳細的分析結果存為 JSON 字符串
+        full_log: JSON.stringify(mockAnalysisResult),
       };
-
       const { data: newRecord, error: insertError } = await supabaseClient
         .from('practice_sessions')
         .insert(logPayload)
         .select()
         .single();
-
       if (insertError) throw insertError;
-
-      // mutationFn 需要返回結果，以便 onSuccess 回調可以接收
       return newRecord;
     },
-    // 成功回調
     onSuccess: (newRecord) => {
-      // newRecord 是上面 mutationFn 返回的、剛插入數據庫的完整記錄
       setDiagnosis(newRecord);
       setGeneratedWords(newRecord.full_log.generatedWords || []);
     },
-    // 失敗回調
     onError: (error) => {
       console.error("Speech diagnosis failed:", error);
-      // 可以在此處設置一個錯誤消息 state 來提示用戶
     },
   });
 
-  // 根據練習語言初始化單詞
+  // --- 其他 Hooks 和函數 (保持不變) ---
   useEffect(() => {
     const wordList = practiceLanguage === 'zh' ? initialWordListZH : initialWordListEN;
     setCurrentWord(wordList[0]);
@@ -113,7 +120,6 @@ export default function Practice({ practiceLanguage }) {
     setGeneratedWords([]);
   }, [practiceLanguage, initialWordListEN, initialWordListZH]);
 
-  // 計時器邏輯 (不變)
   useEffect(() => {
     let intervalId;
     if (isRecording) intervalId = setInterval(() => setTimer(prev => prev + 1), 1000);
@@ -122,12 +128,9 @@ export default function Practice({ practiceLanguage }) {
 
   const formatTime = (seconds) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 
-  // --- 事件處理函數 ---
-
   const handleRecordToggle = useCallback(() => {
     if (isRecording) {
       setIsRecording(false);
-      // ✨ 核心變更 2: 停止錄音後，調用 mutation
       diagnoseSpeech();
     } else {
       setDiagnosis(null);
@@ -155,7 +158,13 @@ export default function Practice({ practiceLanguage }) {
     setDiagnosis(null);
   }, [diagnosis, generatedWords, currentWord]);
 
-  const difficultyLevels = ['kindergarten', 'primary_school', 'middle_school', 'adult'];
+  // ✨ 步驟 7: 調整難度等級的顯示名稱和值
+  const difficultyLevels = [
+    { id: 'Kindergarten', label: 'kindergarten' },
+    { id: 'Primary-School', label: 'primary_school' },
+    { id: 'Secondary-School', label: 'middle_school' },
+    { id: 'Adult', label: 'adult' }
+  ];
   const isPostAnalysis = diagnosis !== null;
 
   return (
@@ -164,14 +173,20 @@ export default function Practice({ practiceLanguage }) {
         <div className="difficulty-section">
           <h3 className="section-title">{t('practicePage.difficultyLevel')}</h3>
           <div className="difficulty-selector">
+            {/* ✨ 步驟 8: 修改按鈕的渲染和點擊事件 */}
             {difficultyLevels.map(level => (
-              <button key={level} className={currentDifficulty === level ? 'active' : ''} onClick={() => setCurrentDifficulty(level)}>
-                {t(`practicePage.levels.${level}`)}
+              <button 
+                key={level.id} 
+                className={currentDifficulty === level.id ? 'active' : ''} 
+                onClick={() => handleDifficultyChange(level.id)}
+              >
+                {t(`practicePage.levels.${level.label}`)}
               </button>
             ))}
           </div>
         </div>
 
+        {/* --- 頁面其餘的 JSX 保持不變 --- */}
         <div className="practice-area">
           <p className="practice-text">{currentWord}</p>
           <div className="practice-controls">
@@ -201,7 +216,7 @@ export default function Practice({ practiceLanguage }) {
           ) : (
             <div className="record-btn-content">
               <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11H7q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 2.6-1.7 4.6T13 18.075V21h-2Z"/></svg>
-              <span className="record-btn-text">{t('practicePage.record' )}</span>
+              <span className="record-btn-text">{t('practicePage.record'  )}</span>
             </div>
           )}
         </button>

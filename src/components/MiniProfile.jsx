@@ -1,14 +1,12 @@
-// src/components/MiniProfile.jsx (The Final, "PHP-Style", Direct-Query Fix)
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query'; // ✨ 1. 引入 useQuery
-import { supabase } from '../supabaseClient'; // ✨ 2. 引入 supabase 客戶端
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../supabaseClient';
 import './MiniProfile.css';
 
-// ✨ 3. 創建一個專門的、只獲取語言的 API 函數
+// --- 輔助函數和 Hooks 保持不變 ---
 const getPracticeLanguage = async (userId) => {
-  if (!userId) return 'en'; // 如果沒有用戶 ID，返回預設值
+  if (!userId) return 'en';
   const { data, error } = await supabase
     .from('user_settings')
     .select('language')
@@ -17,7 +15,7 @@ const getPracticeLanguage = async (userId) => {
   
   if (error) {
     console.error("Error fetching practice language:", error);
-    return 'en'; // 出錯時返回預設值
+    return 'en';
   }
   return data?.language || 'en';
 };
@@ -27,31 +25,44 @@ const MiniProfile = ({ userData }) => {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
 
-  // ✨ 4. 發起一個獨立的、專門的查詢，只為了獲取最新的語言
-  // 這個查詢會自動在數據更新後重新獲取，確保數據永遠是最新的
   const { data: latestPracticeLanguage } = useQuery({
-    // 查詢 key 包含用戶 ID，確保是針對當前用戶的
     queryKey: ['practiceLanguage', userData?.id],
-    // 調用我們剛剛創建的 API 函數
     queryFn: () => getPracticeLanguage(userData?.id),
-    // 只有在 userData 存在時才執行
     enabled: !!userData?.id,
-    // 設置一個短的 staleTime，確保數據能及時更新
-    staleTime: 1000 * 30, // 30 秒
+    staleTime: 1000 * 30,
   });
 
-  // 5. 完全保留您原本的、能正常工作的 initialTestStatus 邏輯
+  // ==================== 變更開始 ====================
+
+  // ✨ 步驟 1: 創建一個更通用的 useMemo 來處理所有等級的顯示
+  const currentLevelDisplay = useMemo(() => {
+    const level = userData?.status?.cur_lvl;
+    if (!level) {
+      return null; // 如果沒有等級，返回 null
+    }
+
+    // 情況 A: 如果是初始測試
+    if (level.startsWith('initial_test_')) {
+      const progressCount = parseInt(level.split('_')[2], 10) || 1;
+      return `Initial Test (${progressCount}/20)`;
+    }
+
+    return level.replace(/-/g, ' ');
+
+  }, [userData?.status]);
+
+  // 我們仍然保留 initialTestStatus，因為它包含了 currentWord
   const initialTestStatus = useMemo(() => {
     if (!userData?.status?.cur_lvl || !userData.status.cur_lvl.startsWith('initial_test_')) {
       return null;
     }
-    const progressCount = parseInt(userData.status.cur_lvl.split('_')[2], 10) || 1;
     return {
-      levelText: `Initial Test ${progressCount}`, 
-      progressText: `(${progressCount}/20)`,
       currentWord: userData.status.cur_word || 'N/A',
     };
   }, [userData?.status]);
+
+  // ==================== 變更結束 ====================
+
 
   if (!userData) {
     return null;
@@ -62,10 +73,12 @@ const MiniProfile = ({ userData }) => {
     return languageMap[langCode] || langCode;
   };
 
-  // 6. 完全保留您原本的變數定義
   const { id, email, username, status } = userData;
-  const suggestedLevel = userData.settings?.sug_lvl || 'N/A';
-  const hasCompletedTest = !!suggestedLevel;
+  // ✨ 步驟 2: 為了更清晰，我們將 suggestedLevel 的 'N/A' 處理移到這裡
+  const suggestedLevel = userData.settings?.sug_lvl 
+  ? userData.settings.sug_lvl.replace(/-/g, ' ') 
+  : 'Not set';
+  const hasCompletedTest = !!userData.settings?.sug_lvl;
 
   return (
     <div 
@@ -78,31 +91,28 @@ const MiniProfile = ({ userData }) => {
           <>
             <h4 className="status-header">{t('miniProfile.statusTitle', 'Current Status')}</h4>
             
-            {/* ✨ 7. 釜底抽薪的唯一修正：使用我們獨立查詢到的、絕對最新的語言數據 */}
             <p><strong>{t('miniProfile.language', 'Language')}:</strong> {getDisplayLanguage(latestPracticeLanguage)}</p>
             
+            {/* ✨ 步驟 3: 修改 JSX，使用新的 currentLevelDisplay */}
             {hasCompletedTest ? (
               <>
                 <p><strong>{t('miniProfile.sug_lvl', 'Suggested Lvl')}:</strong> {suggestedLevel}</p>
-                <p><strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> {initialTestStatus?.levelText}</p>
+                {/* 現在無論何時都能正確顯示當前等級 */}
+                <p><strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> {currentLevelDisplay}</p>
                 <p><strong>{t('miniProfile.target', 'Target Word')}:</strong> {status?.cur_word || 'N/A'}</p>
                 <p><strong>{t('miniProfile.errors')}:</strong> {status?.cur_err || 'N/A'}</p>
               </>
             ) : (
               <>
-                <p>
-                  <strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> 
-                  {initialTestStatus?.levelText}
-                  <span style={{ color: 'var(--text-light)', marginLeft: '0.5em' }}>
-                    {initialTestStatus?.progressText}
-                  </span>
-                </p>
+                {/* 在初始測試期間，也能正確顯示 */}
+                <p><strong>{t('miniProfile.cur_lvl', 'Current Lvl')}:</strong> {currentLevelDisplay}</p>
                 <p><strong>{t('miniProfile.currentWord', 'Current Word')}:</strong> {initialTestStatus?.currentWord}</p>
               </>
             )}
           </>
         ) : (
           <>
+            {/* 非懸停狀態保持不變 */}
             <h4 className="status-header">{t('miniProfile.title', 'Mini Profile')}</h4>
             <p><strong>{t('miniProfile.userId')}</strong> {id}</p>
             <p><strong>{t('miniProfile.emailAddress')}</strong> {email}</p>

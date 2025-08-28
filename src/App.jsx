@@ -150,7 +150,17 @@ function App() {
       
       <Route 
         path="/practice" 
-        element={<PrivateRoute><MainLayout><Practice practiceLanguage={practiceLanguage} /></MainLayout></PrivateRoute>} 
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              {/* ✨ 核心修改: 將 userStatus 作為 prop 傳遞下去 ✨ */}
+              <Practice 
+                practiceLanguage={practiceLanguage} 
+                userStatus={userStatus} 
+              />
+            </MainLayout>
+          </PrivateRoute>
+        } 
       />
       
       <Route 
