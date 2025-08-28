@@ -1,5 +1,3 @@
-// src/App.jsx (The Final, Data-Consistent Version)
-
 import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useSession, useSupabaseClient, SessionContextProvider } from '@supabase/auth-helpers-react';
@@ -56,9 +54,11 @@ function App() {
 
   const { data: profileData, isLoading: isLoadingProfile, isError } = useUser();
   
-  // ✨✨✨ 核心修正 ✨✨✨
-  // 1. 首先，安全地獲取用戶的設置，並確定當前的練習語言
-  const userSettings = useMemo(() => profileData?.settings?.[0] || {}, [profileData]);
+  // =================================================================
+  // == ✨✨✨ 核心錯誤修復 ✨✨✨
+  // == Supabase 的一對一關聯返回的是物件，不是陣列，所以我們移除 [0]
+  // =================================================================
+  const userSettings = useMemo(() => profileData?.settings || {}, [profileData]);
   const practiceLanguage = userSettings?.language || 'en';
 
   // 2. 然後，基於練習語言，從 status 陣列中篩選出正確的狀態
@@ -79,6 +79,7 @@ function App() {
     };
   }, [session, profileData, userSettings, userStatus]);
 
+  // 現在這個邏輯可以正確工作了
   const hasCompletedTest = !!userSettings?.sug_lvl;
 
   useEffect(() => {

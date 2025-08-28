@@ -1,5 +1,3 @@
-// src/pages/Records.jsx (React Query Refactored Version)
-
 import React, { useState, useMemo } from "react";
 import { useSession } from '@supabase/auth-helpers-react';
 import { useQuery } from '@tanstack/react-query';
@@ -17,9 +15,24 @@ import "../styles/Layout.css";
 // ==   數據處理輔助函數 (Data Processing Helpers)                ==
 // =================================================================
 
+// ✨ 步驟 1: 創建一個安全的 JSON 解析函數
+const safeJsonParse = (str) => {
+  // 只在字串看起來像 JSON 物件時才嘗試解析
+  if (typeof str === 'string' && str.trim().startsWith('{')) {
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      // 如果解析失敗，返回 null
+      return null;
+    }
+  }
+  // 如果不是 JSON 字串，直接返回 null
+  return null;
+};
+
+
 const processRecordsForCharts = (records) => {
   if (!records || records.length === 0) {
-    // 如果沒有記錄，返回空的圖表數據結構
     return {
       progressChart: { dates: [], errorRates: [] },
       phonemeChart: { phonemes: [], errorCounts: [] },
@@ -28,9 +41,8 @@ const processRecordsForCharts = (records) => {
     };
   }
 
-  const timeZone = 'Asia/Hong_Kong'; // UTC+8
+  const timeZone = 'Asia/Hong_Kong';
 
-  // --- 1. 整體進度圖 (Progress Chart) ---
   const progressData = {};
   records.forEach(rec => {
     const dateStr = format(toDate(parseISO(rec.created_at), { timeZone }), 'yyyy-MM-dd');
@@ -48,27 +60,22 @@ const processRecordsForCharts = (records) => {
     }),
   };
 
-  // --- 2. 常見錯誤音素圖 (Phoneme Chart) ---
-  // 注意：你的 practice_sessions 表沒有直接的 phoneme 錯誤字段。
-  // 我們將從 full_log 中解析。這是一個示例，你可能需要根據你的日誌結構調整。
   const phonemeErrors = {};
   records.forEach(rec => {
-    try {
-      const log = JSON.parse(rec.full_log);
-      if (log && log.errorSummary && Array.isArray(log.errorSummary)) {
-        log.errorSummary.forEach(phoneme => {
-          phonemeErrors[phoneme] = (phonemeErrors[phoneme] || 0) + 1;
-        });
-      }
-    } catch (e) { /* 忽略無法解析的日誌 */ }
+    // ✨ 步驟 2: 使用我們創建的安全解析函數
+    const log = safeJsonParse(rec.full_log);
+    if (log && log.errorSummary && Array.isArray(log.errorSummary)) {
+      log.errorSummary.forEach(phoneme => {
+        phonemeErrors[phoneme] = (phonemeErrors[phoneme] || 0) + 1;
+      });
+    }
   });
-  const sortedPhonemes = Object.entries(phonemeErrors).sort((a, b) => b[1] - a[1]).slice(0, 10); // 只顯示前10個
+  const sortedPhonemes = Object.entries(phonemeErrors).sort((a, b) => b[1] - a[1]).slice(0, 10);
   const phonemeChart = {
     phonemes: sortedPhonemes.map(p => p[0]),
     errorCounts: sortedPhonemes.map(p => p[1]),
   };
 
-  // --- 3. 練習頻率熱力圖 (Heatmap Chart) ---
   const practiceCountsByDay = {};
   records.forEach(rec => {
     const dateStr = format(toDate(parseISO(rec.created_at), { timeZone }), 'yyyy-MM-dd');
@@ -83,7 +90,7 @@ const processRecordsForCharts = (records) => {
     if (!weeks[weekStartDate]) {
       weeks[weekStartDate] = Array(7).fill(0);
     }
-    const dayIndex = (getDay(day) + 6) % 7; // 0=Mon, 6=Sun
+    const dayIndex = (getDay(day) + 6) % 7;
     const dateStr = format(day, 'yyyy-MM-dd');
     weeks[weekStartDate][dayIndex] = practiceCountsByDay[dateStr] || 0;
   });
@@ -92,8 +99,6 @@ const processRecordsForCharts = (records) => {
     data: data.map((count, i) => ({ x: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i], y: count })),
   }));
 
-
-  // --- 4. 難度分佈圖 (Difficulty Chart) ---
   const difficultyCounts = {};
   records.forEach(rec => {
     const level = rec.diffi_level || 'Unknown';
@@ -121,14 +126,12 @@ export default function Records() {
   const [sortConfig, setSortConfig] = useState({ key: "created_at", direction: "desc" });
   const [expandedRow, setExpandedRow] = useState(null);
 
-  // ✨ 核心變更 1: 使用 useQuery 從後端獲取真實數據
   const { data: rawRecords, isLoading, isError } = useQuery({
     queryKey: ['practiceRecords', userId],
     queryFn: () => getPracticeRecords(userId),
     enabled: !!userId,
   });
 
-  // ✨ 核心變更 2: 使用 useMemo 處理數據，只有在原始數據變化時才重新計算
   const chartData = useMemo(() => processRecordsForCharts(rawRecords), [rawRecords]);
   
   const sortedRecords = useMemo(() => {
@@ -158,7 +161,6 @@ export default function Records() {
     return `sortable active ${sortConfig.direction}`;
   };
 
-  // --- Chart Options (保持大部分不變，只修改數據源) ---
   const progressChartOptions = { chart: { id: "progress", toolbar: { show: false }, background: "transparent" }, xaxis: { categories: chartData.progressChart.dates }, stroke: { curve: "smooth", width: 3 }, colors: ["#4f46e5"], markers: { size: 5 }, grid: { borderColor: "#e2e8f0" }, yaxis: { labels: { formatter: (val) => val.toFixed(0) + "%" } }, tooltip: { y: { formatter: (val) => val.toFixed(2) + "%" } } };
   const phonemeChartOptions = { chart: { id: "phoneme", type: "bar", toolbar: { show: false }, background: "transparent" }, plotOptions: { bar: { horizontal: true, barHeight: "50%", borderRadius: 4 } }, xaxis: { categories: chartData.phonemeChart.phonemes }, colors: ["#f59e0b"], grid: { borderColor: "#e2e8f0" } };
   const heatmapChartOptions = { chart: { type: "heatmap", toolbar: { show: false }, background: "transparent" }, plotOptions: { heatmap: { radius: 4, enableShades: false, colorScale: { ranges: [{ from: 0, to: 0, name: "None", color: "#ebedf0" }, { from: 1, to: 3, name: "Low", color: "#9be9a8" }, { from: 4, to: 7, name: "Medium", color: "#40c463" }, { from: 8, to: 15, name: "High", color: "#30a14e" }] } } }, stroke: { width: 2, colors: ["#ffffff"] }, dataLabels: { enabled: false }, legend: { position: "top", horizontalAlign: "left" }, xaxis: { type: "category", categories: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] }, grid: { borderColor: "#e2e8f0", padding: { top: -20 } }, tooltip: { y: { formatter: (value) => `Practices: <b>${value}</b>` } } };
@@ -204,7 +206,8 @@ export default function Records() {
                   <td>{record.target_word}</td>
                   <td>{record.diffi_level}</td>
                   <td>{`${((record.error_rate || 0) * 100).toFixed(2)}%`}</td>
-                  <td>{JSON.parse(record.full_log)?.errorSummary?.join(', ') || 'N/A'}</td>
+                  {/* ✨ 步驟 3: 在表格渲染時也使用安全解析函數 */}
+                  <td>{safeJsonParse(record.full_log)?.errorSummary?.join(', ') || 'N/A'}</td>
                   <td><button className="details-btn" onClick={() => setExpandedRow(expandedRow === record.psid ? null : record.psid)}>{expandedRow === record.psid ? t('recordsPage.table.hide') : t('recordsPage.table.details')}</button></td>
                 </tr>
                 {expandedRow === record.psid && (
