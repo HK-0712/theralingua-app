@@ -127,11 +127,26 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
   const { mutate: advanceToNextWord, isPending: isAdvancing } = useMutation({
     mutationFn: async ({ isSkip = false }) => {
       const newProgressCount = progressCount + 1;
+
+      let errorCount = 0;
+      let phonemeCount = 1; // 避免除以零
+
+      if (!isSkip && testProgress?.cur_log) {
+        // 使用正規表示式從日誌字串中安全地提取數字，避免 JSON 解析錯誤
+        const errorMatch = testProgress.cur_log.match(/Found (\d+) error/);
+        const phonemeMatch = testProgress.cur_log.match(/in a (\d+)-phoneme/);
+        
+        if (errorMatch) errorCount = parseInt(errorMatch[1], 10);
+        if (phonemeMatch) phonemeCount = parseInt(phonemeMatch[1], 10) || 1;
+      }
+
       const sessionData = {
         user_id: userId,
         language: practiceLanguage,
         target_word: currentWord,
-        error_rate: isSkip ? 1.0 : ((JSON.parse(testProgress?.cur_log || '{}')?.error_count ?? 1) / (JSON.parse(testProgress?.cur_log || '{}')?.phoneme_count ?? 1)),
+        // 如果是跳過，錯誤率為 1.0；否則，根據提取的數字計算
+        error_rate: isSkip ? 1.0 : (errorCount / phonemeCount),
+        // 如果是跳過，儲存一個標記；否則，直接儲存從資料庫讀取的文字日誌
         full_log: isSkip ? JSON.stringify({ status: 'skipped' }) : testProgress?.cur_log,
       };
       await postInitialTestResult(sessionData);
