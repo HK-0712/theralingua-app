@@ -77,7 +77,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
     clearBlobUrl,
   } = useReactMediaRecorder({ 
     audio: true,
-    blobPropertyBag: { type: 'audio/mp3' },
+    blobPropertyBag: { type: 'audio/wav' },
     onStop: (blobUrl, blob) => {
       analyzeRecording({ 
         audioBlob: blob, 
@@ -259,7 +259,7 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
       }
       
       const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.mp3');
+      formData.append('audio', audioBlob, 'recording.wav');
       formData.append('target_word', word);
       formData.append('language', lang);
 
