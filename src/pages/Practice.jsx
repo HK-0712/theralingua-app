@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { 
   updateInitialTestProgress as updateUserStatus,
   getWeakestPhoneme,
-  generatePracticeWord
+  generatePracticeWord,
 } from '../api/supabaseAPI';
 
 import '../styles/Practice.css';
