@@ -92,7 +92,7 @@ export default function Practice({ practiceLanguage, userStatus }) {
   });
 
   const { mutate: advanceToNextStep, isPending: isAdvancing } = useMutation({
-    mutationFn: async () => {
+    mutationFn: async () => { // 不再需要傳入 recommendedWord
       if (!diagnosis) return;
       const errorMatch = diagnosis.match(/Found (\d+) error\(s\) in a (\d+)-phoneme word/);
       const errorCount = errorMatch ? parseInt(errorMatch[1], 10) : 0;
@@ -117,15 +117,24 @@ export default function Practice({ practiceLanguage, userStatus }) {
       if (Object.keys(phonemeStats).length > 0) {
         await supabase.rpc('update_phoneme_summary_from_stats', { p_user_id: userId, p_language: practiceLanguage, p_stats: phonemeStats });
       }
+      
+      // 【核心修正】: 確保 diffi_level 使用的是最新的 userStatus.cur_lvl
       await postPracticeSession({
-        user_id: userId, language: practiceLanguage, target_word: currentWord,
-        diffi_level: currentDifficulty, error_rate: errorCount / phonemeCount, full_log: diagnosis,
+        user_id: userId, 
+        language: practiceLanguage, 
+        target_word: currentWord,
+        diffi_level: userStatus.cur_lvl, // 直接從 props 獲取，保證準確性
+        error_rate: errorCount / phonemeCount, 
+        full_log: diagnosis,
       });
+
       const recommendedWordMatch = diagnosis.match(/Recommended Practice Word: "([^"]+)"/);
       const nextWord = recommendedWordMatch ? recommendedWordMatch[1] : null;
       await updateUserStatus(userId, practiceLanguage, { cur_word: nextWord, cur_log: null, cur_err: null });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user', userId] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+    }
   });
 
   // --- Your useEffects (Unchanged) ---
@@ -190,6 +199,7 @@ export default function Practice({ practiceLanguage, userStatus }) {
 
   const handleNext = useCallback(() => {
     if (isAdvancing) return;
+    // 不再需要傳遞參數
     advanceToNextStep();
   }, [isAdvancing, advanceToNextStep]);
 

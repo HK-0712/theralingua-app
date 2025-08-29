@@ -1,10 +1,10 @@
-// supabase/functions/analyze-speech/index.ts
+// supabase/functions/analyze-speech/index.ts (Final Corrected Version)
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 // ==============================================================================
-// 核心資源與輔助函數
+// 核心資源與輔助函數 (這部分完全沒有變更 )
 // ==============================================================================
 
 const CMUDICT_PHONEMES: string[] = [
@@ -92,10 +92,12 @@ function getErrorPhonemes(errors: AlignmentError[]): string[] {
     return [...new Set(errorPhonemes)].sort();
 }
 
+// generateFullLog 函數現在是正確的，無需修改
 function generateFullLog(result: {
     target_word: string, possible_ipa: string[], user_ipa: string,
     best_match_ipa: string, aligned_target: string[], aligned_user: string[],
-    error_count: number, phoneme_count: number, error_summary: string[]
+    error_count: number, phoneme_count: number, error_summary: string[],
+    difficulty_level: string 
 }): string {
     const allPhonemes = [...result.aligned_target, ...result.aligned_user];
     const maxLen = allPhonemes.length > 0 ? Math.max(...allPhonemes.map(p => p.length)) : 1;
@@ -107,16 +109,13 @@ function generateFullLog(result: {
   - Target: '${result.target_word}', Possible IPAs: [${result.possible_ipa.map(p => `'${p}'`).join(', ')}]
   - User Input: ${result.user_ipa}
   - Best Match: '${result.best_match_ipa}'
+  - Difficulty Level: ${result.difficulty_level}
 【Phoneme Alignment】
   Target: [ ${targetLine} ]
   User  : [ ${userLine} ]
   - Diagnosis Complete: Found ${result.error_count} error(s) in a ${result.phoneme_count}-phoneme word.
   - Detected Errors: [${result.error_summary.map(p => `'${p}'`).join(', ')}]`;
 }
-
-// ==============================================================================
-// 決策與生成層所需的新輔助函數
-// ==============================================================================
 
 function getDynamicErrorThreshold(phonemeCount: number): number {
     if (phonemeCount <= 2) return phonemeCount + 1;
@@ -132,7 +131,6 @@ function areErrorsOnlyInsertion(errors: AlignmentError[]): boolean {
 
 async function getNewPracticeWord(supabaseAdmin: SupabaseClient, params: { phoneme: string; difficulty_level: string; language: string; }): Promise<string | null> {
     try {
-        // 注意：這裡的 body 是 JSON，因為 generate-practice-word 的 Deno.serve 期望 JSON
         const { data, error } = await supabaseAdmin.functions.invoke('generate-practice-word', {
             body: params
         });
@@ -145,7 +143,7 @@ async function getNewPracticeWord(supabaseAdmin: SupabaseClient, params: { phone
 }
 
 // ==============================================================================
-// 主服務函數
+// 主服務函數 (最終修正版)
 // ==============================================================================
 
 Deno.serve(async (req) => {
@@ -153,6 +151,7 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
   try {
+    // 1. 解析請求 (不變)
     const formData = await req.formData();
     const audioFile = formData.get('audio');
     const targetWord = formData.get('target_word') as string;
@@ -162,6 +161,7 @@ Deno.serve(async (req) => {
       throw new Error('Missing file, target_word, or language parameter.');
     }
 
+    // 2. 初始化 Supabase 客戶端並調用 ASR (不變)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -188,6 +188,7 @@ Deno.serve(async (req) => {
     }
     const asrResult = await asrResponse.json();
 
+    // 3. 執行發音分析 (不變)
     const targetPhonemes = segmentIpa(asrResult.target_ipa);
     const userPhonemes = segmentIpa(asrResult.asr_ipa);
     const { errors, errorCount, alignedTarget, alignedActual } = alignAndFindErrors(targetPhonemes, userPhonemes);
@@ -205,6 +206,7 @@ Deno.serve(async (req) => {
         error_summary: errorPhonemes
     };
 
+    // 4. 獲取用戶 ID (不變)
     const authHeader = req.headers.get('Authorization')!;
     const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
     if (!user) {
@@ -212,10 +214,25 @@ Deno.serve(async (req) => {
     }
     const userId = user.id;
 
+    // ✨✨✨【核心修正 1】: 在所有邏輯開始前，先獲取用戶狀態 ✨✨✨
+    const { data: userStatus, error: userStatusError } = await supabaseAdmin
+        .from('user_status')
+        .select('cur_lvl')
+        .eq('user_id', userId)
+        .eq('language', language)
+        .single();
+
+    // 如果獲取失敗，提供一個安全的預設值
+    if (userStatusError) {
+        console.error(`Could not fetch user level for ${userId}:`, userStatusError.message);
+    }
+    const currentDifficulty = userStatus?.cur_lvl || 'Primary-School';
+
     const referer = req.headers.get('referer') || '';
     const isInitialTest = referer.includes('/initial-test');
 
-    let fullLogText = generateFullLog(finalResult);
+    // ✨✨✨【核心修正 2】: 將獲取到的難度等級傳遞給 generateFullLog ✨✨✨
+    let fullLogText = generateFullLog({ ...finalResult, difficulty_level: currentDifficulty });
     let errorSummaryForDb = errorPhonemes.join(', ');
 
     if (!isInitialTest) {
@@ -234,12 +251,12 @@ Deno.serve(async (req) => {
             if (trainablePhonemes.length > 0) {
                 decisionLog += `  - Decision: Initiating practice generation for [${trainablePhonemes.map(p => `'${p}'`).join(', ')}].`;
                 
-                const { data: userStatus } = await supabaseAdmin.from('user_status').select('cur_lvl').eq('user_id', userId).eq('language', language).single();
-                const difficulty = (userStatus?.cur_lvl || 'Primary-School').toLowerCase().replace(/-/g, '_');
+                // ✨✨✨【核心修正 3】: 直接使用我們已經獲取到的 currentDifficulty ✨✨✨
+                const difficultyForLlm = currentDifficulty.toLowerCase().replace(/-/g, '_');
 
                 const newWord = await getNewPracticeWord(supabaseAdmin, {
                     phoneme: trainablePhonemes[0],
-                    difficulty_level: difficulty,
+                    difficulty_level: difficultyForLlm, // 使用正確的難度等級
                     language: language
                 });
 
@@ -255,6 +272,7 @@ Deno.serve(async (req) => {
         fullLogText += decisionLog;
     }
 
+    // 5. 更新 user_status 表 (不變)
     const { error: updateError } = await supabaseAdmin
       .from('user_status')
       .update({
@@ -268,6 +286,7 @@ Deno.serve(async (req) => {
       console.error(`Failed to update user_status for user ${userId}:`, updateError);
     }
 
+    // 6. 返回響應 (不變)
     return new Response(
       JSON.stringify(finalResult),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
