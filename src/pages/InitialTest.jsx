@@ -222,9 +222,10 @@ export default function InitialTest({ onTestComplete, practiceLanguage }) {
         await markTestAsCompleted(userId, practiceLanguage, suggestedLevel);
         
         // ✨ 步驟 6: 新增 - 立即將 user_status 中的 cur_lvl 也更新為建議等級
-        await updateInitialTestProgress(userId, practiceLanguage, { cur_lvl: suggestedLevel });
-        
-        return { isCompleted: true };
+        await updateInitialTestProgress(userId, practiceLanguage, { 
+          cur_lvl: suggestedLevel,
+          cur_word: null // ✨ 新增此行以清空最後一個單字
+        });
 
       } else {
         // --- 以下邏輯保持不變 ---

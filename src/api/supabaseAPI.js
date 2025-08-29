@@ -278,3 +278,89 @@ export const getPhonemeSummary = async (userId, language) => {
   }
   return data;
 };
+
+// =================================================================
+// ==   日常練習 API (修正版)                                     ==
+// =================================================================
+
+/**
+ * ✨ [新增] 獲取用戶最弱的音標。
+ * @param {string} userId - 用戶 ID。
+ * @param {string} language - 練習語言。
+ * @returns {Promise<string>} - 最弱的音標字串，如果沒有則返回預設值 'i'。
+ */
+export const getWeakestPhoneme = async (userId, language) => {
+  if (!userId || !language) return 'i'; // 返回預設值
+
+  const { data, error } = await supabase
+    .from('user_progress_summary')
+    .select('phoneme')
+    .eq('user_id', userId)
+    .eq('language', language)
+    .order('avg_err_rate', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    return 'i'; // 如果出錯或沒找到，也返回預設值
+  }
+  return data.phoneme;
+};
+
+/**
+ * ✨ [修正] 調用 Edge Function 來為用戶生成一個新的練習單字。
+ * 現在它會發送 form-data。
+ * @param {object} params - 包含 phoneme, difficulty_level, language 的對象。
+ * @returns {Promise<object>} - 從 LLM 服務返回的包含 practice_word 的對象。
+ */
+export const generatePracticeWord = async ({ phoneme, difficulty_level, language }) => {
+  if (!phoneme || !difficulty_level || !language) {
+    throw new Error('Phoneme, difficulty level, and language are required.');
+  }
+
+  const formData = new FormData();
+  formData.append('phoneme', phoneme);
+  formData.append('difficulty_level', difficulty_level);
+  formData.append('language', language);
+
+  const { data, error } = await supabase.functions.invoke('generate-practice-word', {
+    body: formData, // ✨ 直接發送 FormData
+  });
+
+  if (error) {
+    console.error('Error generating practice word:', error);
+    // 讓錯誤訊息更具體
+    const errorMessage = error.context?.json?.()?.error || error.message;
+    throw new Error(`Failed to generate a new word: ${errorMessage}`);
+  }
+
+  return data;
+};
+
+/**
+ * ✨ [新增] 獲取指定用戶和語言的練習狀態。
+ * @param {string} userId - 用戶 ID。
+ * @param {string} language - 練習語言。
+ * @returns {Promise<object>} - 包含 cur_lvl, cur_word, 和 cur_log 的 user_status 對象。
+ */
+export const getPracticeStatus = async (userId, language) => {
+  if (!userId || !language) return null;
+
+  const { data, error } = await supabase
+    .from('user_status')
+    .select('cur_lvl, cur_word, cur_log')
+    .eq('user_id', userId)
+    .eq('language', language)
+    .single();
+
+  if (error) {
+    // 如果找不到記錄 (例如，用戶剛切換了新語言)，返回一個預設的空狀態
+    if (error.code === 'PGRST116') {
+      return { cur_lvl: 'Primary-School', cur_word: null, cur_log: null };
+    }
+    console.error('Error fetching practice status:', error);
+    throw error;
+  }
+
+  return data;
+};

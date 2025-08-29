@@ -40,7 +40,7 @@
     "levels": {
       "kindergarten": "Kindergarten",
       "primary_school": "Primary School",
-      "middle_school": "Middle School",
+      "middle_school": "Secondary School",
       "adult": "Adult"
     },
     "tryAgain": "Try Again",
