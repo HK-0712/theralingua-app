@@ -253,3 +253,28 @@ export const getPracticeRecords = async (userId) => {
     }
     return data;
 };
+
+/**
+ * ✨ [新增] 獲取指定用戶和語言的音標錯誤摘要。
+ * 直接從 user_progress_summary 表中查詢，並按錯誤數量排序。
+ * @param {string} userId - 用戶 ID。
+ * @param {string} language - 練習語言。
+ * @returns {Promise<Array>} - 包含最多前 5 條音標錯誤記錄的陣列。
+ */
+export const getPhonemeSummary = async (userId, language) => {
+  if (!userId || !language) throw new Error('User ID and language are required.');
+
+  const { data, error } = await supabase
+    .from('user_progress_summary')
+    .select('phoneme, err_amount')
+    .eq('user_id', userId)
+    .eq('language', language)
+    .order('err_amount', { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.error('Error fetching phoneme summary:', error);
+    throw new Error(error.message);
+  }
+  return data;
+};
