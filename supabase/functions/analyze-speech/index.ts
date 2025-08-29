@@ -1,4 +1,4 @@
-// supabase/functions/analyze-speech/index.ts (Final Corrected Version)
+// supabase/functions/analyze-speech/index.ts (Final, Simplified & Corrected Version)
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
@@ -92,31 +92,6 @@ function getErrorPhonemes(errors: AlignmentError[]): string[] {
     return [...new Set(errorPhonemes)].sort();
 }
 
-// generateFullLog 函數現在是正確的，無需修改
-function generateFullLog(result: {
-    target_word: string, possible_ipa: string[], user_ipa: string,
-    best_match_ipa: string, aligned_target: string[], aligned_user: string[],
-    error_count: number, phoneme_count: number, error_summary: string[],
-    difficulty_level: string 
-}): string {
-    const allPhonemes = [...result.aligned_target, ...result.aligned_user];
-    const maxLen = allPhonemes.length > 0 ? Math.max(...allPhonemes.map(p => p.length)) : 1;
-    const formatPhoneme = (p: string) => p.padEnd(maxLen, ' ');
-    const targetLine = result.aligned_target.map(formatPhoneme).join(' ');
-    const userLine = result.aligned_user.map(formatPhoneme).join(' ');
-
-    return `【Diagnosis Layer】
-  - Target: '${result.target_word}', Possible IPAs: [${result.possible_ipa.map(p => `'${p}'`).join(', ')}]
-  - User Input: ${result.user_ipa}
-  - Best Match: '${result.best_match_ipa}'
-  - Difficulty Level: ${result.difficulty_level}
-【Phoneme Alignment】
-  Target: [ ${targetLine} ]
-  User  : [ ${userLine} ]
-  - Diagnosis Complete: Found ${result.error_count} error(s) in a ${result.phoneme_count}-phoneme word.
-  - Detected Errors: [${result.error_summary.map(p => `'${p}'`).join(', ')}]`;
-}
-
 function getDynamicErrorThreshold(phonemeCount: number): number {
     if (phonemeCount <= 2) return phonemeCount + 1;
     if (phonemeCount >= 3 && phonemeCount <= 5) return 2;
@@ -143,7 +118,7 @@ async function getNewPracticeWord(supabaseAdmin: SupabaseClient, params: { phone
 }
 
 // ==============================================================================
-// 主服務函數 (最終修正版)
+// 主服務函數 (最終、最簡潔修正版)
 // ==============================================================================
 
 Deno.serve(async (req) => {
@@ -214,7 +189,9 @@ Deno.serve(async (req) => {
     }
     const userId = user.id;
 
-    // ✨✨✨【核心修正 1】: 在所有邏輯開始前，先獲取用戶狀態 ✨✨✨
+    // ✨✨✨【核心修正】: 採用您的 `if/else` 方案 ✨✨✨
+
+    // 步驟 A: 獲取用戶當前的等級
     const { data: userStatus, error: userStatusError } = await supabaseAdmin
         .from('user_status')
         .select('cur_lvl')
@@ -222,23 +199,40 @@ Deno.serve(async (req) => {
         .eq('language', language)
         .single();
 
-    // 如果獲取失敗，提供一個安全的預設值
     if (userStatusError) {
         console.error(`Could not fetch user level for ${userId}:`, userStatusError.message);
     }
-    const currentDifficulty = userStatus?.cur_lvl || 'Primary-School';
+    const currentLevel = userStatus?.cur_lvl || 'Primary-School';
+    const isInitialTest = currentLevel.startsWith('initial_test_');
 
-    const referer = req.headers.get('referer') || '';
-    const isInitialTest = referer.includes('/initial-test');
+    // 步驟 B: 根據等級決定日誌內容
+    let fullLogText = '';
+    const errorSummaryForDb = errorPhonemes.join(', ');
 
-    // ✨✨✨【核心修正 2】: 將獲取到的難度等級傳遞給 generateFullLog ✨✨✨
-    let fullLogText = generateFullLog({ ...finalResult, difficulty_level: currentDifficulty });
-    let errorSummaryForDb = errorPhonemes.join(', ');
+    const allPhonemes = [...finalResult.aligned_target, ...finalResult.aligned_user];
+    const maxLen = allPhonemes.length > 0 ? Math.max(...allPhonemes.map(p => p.length)) : 1;
+    const formatPhoneme = (p: string) => p.padEnd(maxLen, ' ');
+    const targetLine = finalResult.aligned_target.map(formatPhoneme).join(' ');
+    const userLine = finalResult.aligned_user.map(formatPhoneme).join(' ');
 
-    if (!isInitialTest) {
+    const baseLog = `【Diagnosis Layer】
+  - Target: '${finalResult.target_word}', Possible IPAs: [${finalResult.possible_ipa.map(p => `'${p}'`).join(', ')}]
+  - User Input: ${finalResult.user_ipa}
+  - Best Match: '${finalResult.best_match_ipa}'
+【Phoneme Alignment】
+  Target: [ ${targetLine} ]
+  User  : [ ${userLine} ]
+  - Diagnosis Complete: Found ${finalResult.error_count} error(s) in a ${finalResult.phoneme_count}-phoneme word.
+  - Detected Errors: [${finalResult.error_summary.map(p => `'${p}'`).join(', ')}]`;
+
+    if (isInitialTest) {
+        // 如果是初始測試，只使用基礎日誌
+        fullLogText = baseLog;
+    } else {
+        // 如果是日常練習，生成完整的日誌
+        let decisionLog = `\n  - Difficulty Level: ${currentLevel}\n【Decision & Generation Layer】\n`;
         const phonemeCount = finalResult.phoneme_count;
         const allowedErrors = getDynamicErrorThreshold(phonemeCount);
-        let decisionLog = "\n【Decision & Generation Layer】\n";
 
         if (errorCount > allowedErrors) {
             decisionLog += `  - Decision: The number of errors (${errorCount}) is too high for a word of this length (threshold: ${allowedErrors}). Let's try this word again.`;
@@ -250,16 +244,12 @@ Deno.serve(async (req) => {
             const trainablePhonemes = getErrorPhonemes(errors);
             if (trainablePhonemes.length > 0) {
                 decisionLog += `  - Decision: Initiating practice generation for [${trainablePhonemes.map(p => `'${p}'`).join(', ')}].`;
-                
-                // ✨✨✨【核心修正 3】: 直接使用我們已經獲取到的 currentDifficulty ✨✨✨
-                const difficultyForLlm = currentDifficulty.toLowerCase().replace(/-/g, '_');
-
+                const difficultyForLlm = currentLevel.toLowerCase().replace(/-/g, '_');
                 const newWord = await getNewPracticeWord(supabaseAdmin, {
                     phoneme: trainablePhonemes[0],
-                    difficulty_level: difficultyForLlm, // 使用正確的難度等級
+                    difficulty_level: difficultyForLlm,
                     language: language
                 });
-
                 if (newWord) {
                     decisionLog += `\n      ➡️  Recommended Practice Word: "${newWord}"`;
                 } else {
@@ -269,7 +259,8 @@ Deno.serve(async (req) => {
                  decisionLog += "  - Decision: Errors found, but they are not trainable.";
             }
         }
-        fullLogText += decisionLog;
+        // 將基礎日誌和決策層合併
+        fullLogText = baseLog.replace('【Phoneme Alignment】', `  - Difficulty Level: ${currentLevel}\n【Phoneme Alignment】`) + decisionLog;
     }
 
     // 5. 更新 user_status 表 (不變)
