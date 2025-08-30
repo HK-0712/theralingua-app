@@ -64,6 +64,12 @@ Deno.serve(async (req) => {
     const difficulty_level = formData.get('difficulty_level') as string;
     const language = formData.get('language') as string;
 
+    console.log("Received parameters for word generation:", {
+        phoneme,
+        difficulty_level, // <--- 這就是您要檢查的關鍵值
+        language
+    });
+
     if (!phoneme || !difficulty_level || !language) {
       throw new Error("Missing 'phoneme', 'difficulty_level', or 'language' in request form-data.");
     }

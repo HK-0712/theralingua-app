@@ -1,4 +1,4 @@
-// supabase/functions/analyze-speech/index.ts (Final, Simplified & Corrected Version)
+// supabase/functions/analyze-speech/index.ts (Final, Absolutely Corrected Version)
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
@@ -104,21 +104,8 @@ function areErrorsOnlyInsertion(errors: AlignmentError[]): boolean {
     return errors.every(err => err.type === 'Insertion');
 }
 
-async function getNewPracticeWord(supabaseAdmin: SupabaseClient, params: { phoneme: string; difficulty_level: string; language: string; }): Promise<string | null> {
-    try {
-        const { data, error } = await supabaseAdmin.functions.invoke('generate-practice-word', {
-            body: params
-        });
-        if (error) throw error;
-        return data?.practice_word || null;
-    } catch (e) {
-        console.error("Error invoking 'generate-practice-word' function:", e.message);
-        return null;
-    }
-}
-
 // ==============================================================================
-// 主服務函數 (最終、最簡潔修正版)
+// 主服務函數 (最終、絕對正確版)
 // ==============================================================================
 
 Deno.serve(async (req) => {
@@ -161,6 +148,7 @@ Deno.serve(async (req) => {
       const errorBody = await asrResponse.text();
       throw new Error(`ASR server returned an error: ${asrResponse.status} ${errorBody}`);
     }
+    // ✨✨✨【核心修正 1】: asrResult 現在是我們唯一的數據源 ✨✨✨
     const asrResult = await asrResponse.json();
 
     // 3. 執行發音分析 (不變)
@@ -168,18 +156,6 @@ Deno.serve(async (req) => {
     const userPhonemes = segmentIpa(asrResult.asr_ipa);
     const { errors, errorCount, alignedTarget, alignedActual } = alignAndFindErrors(targetPhonemes, userPhonemes);
     const errorPhonemes = getErrorPhonemes(errors);
-
-    const finalResult = {
-        target_word: asrResult.target_word,
-        possible_ipa: [asrResult.target_ipa],
-        user_ipa: asrResult.asr_ipa,
-        best_match_ipa: asrResult.target_ipa,
-        aligned_target: alignedTarget,
-        aligned_user: alignedActual,
-        error_count: errorCount,
-        phoneme_count: targetPhonemes.length,
-        error_summary: errorPhonemes
-    };
 
     // 4. 獲取用戶 ID (不變)
     const authHeader = req.headers.get('Authorization')!;
@@ -189,9 +165,7 @@ Deno.serve(async (req) => {
     }
     const userId = user.id;
 
-    // ✨✨✨【核心修正】: 採用您的 `if/else` 方案 ✨✨✨
-
-    // 步驟 A: 獲取用戶當前的等級
+    // 5. 根據您的 `if/else` 方案決定日誌內容
     const { data: userStatus, error: userStatusError } = await supabaseAdmin
         .from('user_status')
         .select('cur_lvl')
@@ -205,33 +179,29 @@ Deno.serve(async (req) => {
     const currentLevel = userStatus?.cur_lvl || 'Primary-School';
     const isInitialTest = currentLevel.startsWith('initial_test_');
 
-    // 步驟 B: 根據等級決定日誌內容
     let fullLogText = '';
     const errorSummaryForDb = errorPhonemes.join(', ');
 
-    const allPhonemes = [...finalResult.aligned_target, ...finalResult.aligned_user];
+    const allPhonemes = [...alignedTarget, ...alignedActual];
     const maxLen = allPhonemes.length > 0 ? Math.max(...allPhonemes.map(p => p.length)) : 1;
     const formatPhoneme = (p: string) => p.padEnd(maxLen, ' ');
-    const targetLine = finalResult.aligned_target.map(formatPhoneme).join(' ');
-    const userLine = finalResult.aligned_user.map(formatPhoneme).join(' ');
+    const targetLine = alignedTarget.map(formatPhoneme).join(' ');
+    const userLine = alignedActual.map(formatPhoneme).join(' ');
 
     const baseLog = `【Diagnosis Layer】
-  - Target: '${finalResult.target_word}', Possible IPAs: [${finalResult.possible_ipa.map(p => `'${p}'`).join(', ')}]
-  - User Input: ${finalResult.user_ipa}
-  - Best Match: '${finalResult.best_match_ipa}'
+  - Target: '${asrResult.target_word}', Possible IPAs: ['${asrResult.target_ipa || ''}']
+  - User Input: ${asrResult.asr_ipa}
 【Phoneme Alignment】
   Target: [ ${targetLine} ]
   User  : [ ${userLine} ]
-  - Diagnosis Complete: Found ${finalResult.error_count} error(s) in a ${finalResult.phoneme_count}-phoneme word.
-  - Detected Errors: [${finalResult.error_summary.map(p => `'${p}'`).join(', ')}]`;
+  - Diagnosis Complete: Found ${errorCount} error(s) in a ${targetPhonemes.length}-phoneme word.
+  - Detected Errors: [${errorPhonemes.map(p => `'${p}'`).join(', ')}]`;
 
     if (isInitialTest) {
-        // 如果是初始測試，只使用基礎日誌
         fullLogText = baseLog;
     } else {
-        // 如果是日常練習，生成完整的日誌
-        let decisionLog = `\n  - Difficulty Level: ${currentLevel}\n【Decision & Generation Layer】\n`;
-        const phonemeCount = finalResult.phoneme_count;
+        let decisionLog = `\n【Decision & Generation Layer】\n`;
+        const phonemeCount = targetPhonemes.length;
         const allowedErrors = getDynamicErrorThreshold(phonemeCount);
 
         if (errorCount > allowedErrors) {
@@ -242,28 +212,21 @@ Deno.serve(async (req) => {
             decisionLog += "  - Decision: Only insertion errors. Your pronunciation is very accurate! You just added some extra sounds. Try to match the target word's syllables exactly.";
         } else {
             const trainablePhonemes = getErrorPhonemes(errors);
-            if (trainablePhonemes.length > 0) {
-                decisionLog += `  - Decision: Initiating practice generation for [${trainablePhonemes.map(p => `'${p}'`).join(', ')}].`;
-                const difficultyForLlm = currentLevel.toLowerCase().replace(/-/g, '_');
-                const newWord = await getNewPracticeWord(supabaseAdmin, {
-                    phoneme: trainablePhonemes[0],
-                    difficulty_level: difficultyForLlm,
-                    language: language
-                });
-                if (newWord) {
-                    decisionLog += `\n      ➡️  Recommended Practice Word: "${newWord}"`;
-                } else {
-                    decisionLog += `\n      ➡️  Could not generate a practice word for ['${trainablePhonemes[0]}'] at this difficulty.`;
-                }
+            decisionLog += `  - Decision: Initiating practice generation for [${trainablePhonemes.map(p => `'${p}'`).join(', ')}].`;
+            
+            // ✨✨✨【核心修正 2】: 直接使用 asrResult 中的 suggest_word ✨✨✨
+            const suggestWord = asrResult.suggest_word;
+
+            if (suggestWord) {
+                decisionLog += `\n      ➡️  Recommended Practice Word: "${suggestWord}"`;
             } else {
-                 decisionLog += "  - Decision: Errors found, but they are not trainable.";
+                decisionLog += `\n      ➡️  Could not generate a practice word for [${trainablePhonemes.map(p => `'${p}'`).join(', ')}] at this difficulty.`;
             }
         }
-        // 將基礎日誌和決策層合併
         fullLogText = baseLog.replace('【Phoneme Alignment】', `  - Difficulty Level: ${currentLevel}\n【Phoneme Alignment】`) + decisionLog;
     }
 
-    // 5. 更新 user_status 表 (不變)
+    // 6. 更新 user_status 表 (不變)
     const { error: updateError } = await supabaseAdmin
       .from('user_status')
       .update({
@@ -277,9 +240,20 @@ Deno.serve(async (req) => {
       console.error(`Failed to update user_status for user ${userId}:`, updateError);
     }
 
-    // 6. 返回響應 (不變)
+    // 7. 返回響應 (只返回最基礎的分析結果，不包含建議單詞)
+    const clientResponse = {
+        target_word: asrResult.target_word,
+        possible_ipa: asrResult.possible_ipa,
+        user_ipa: asrResult.asr_ipa,
+        aligned_target: alignedTarget,
+        aligned_user: alignedActual,
+        error_count: errorCount,
+        phoneme_count: targetPhonemes.length,
+        error_summary: errorPhonemes
+    };
+
     return new Response(
-      JSON.stringify(finalResult),
+      JSON.stringify(clientResponse),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
